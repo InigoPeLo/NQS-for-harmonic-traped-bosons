@@ -7,7 +7,9 @@ authors = [
     { name = "InigoPeLo", email = "206222521+InigoPeLo@users.noreply.github.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "netket>=3.22.4",
+]
 
 [project.scripts]
 boson-trap = "boson_trap:main"
