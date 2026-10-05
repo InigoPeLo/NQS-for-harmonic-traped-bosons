@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class MetroSampler:
     """Class to define the Metropolis sampler for the VMC algorithm"""
@@ -90,6 +91,22 @@ class MetroSampler:
         #We return mean accepts to check if the sampler is working as intended, we aim for values 
         #close to 50%
         return samples, walkers, jnp.mean(accepts)
+
+    def check_therm(self, samples, z_max=3.0):
+        """Check if the chains have thermalized: the mean of sum_i |x_i|^2 must not drift between the
+        third and the last quarter of the samples. Since the chains are independent, the spread of the
+        per-chain drifts gives its error bar. Returns (thermalized, z) with z the drift in sigmas."""
+
+        #sum_i |x_i|^2 per sample, splitting again sweeps and chains: (n_samples, n_chains)
+        r2 = jnp.sum(samples**2, axis=(1, 2)).reshape(-1, self.n_chains)
+
+        q = r2.shape[0] // 4 #We ignore the first 2 quarters of the samples,
+        d = jnp.mean(r2[3*q:], axis=0) - jnp.mean(r2[2*q:3*q], axis=0)  #drift of every chain
+        z = jnp.mean(d) / (jnp.std(d) / jnp.sqrt(self.n_chains))
+
+        #We aim for a z smaller than 3, which means that the drift is smaller than 3 sigmas. 
+        
+        return jnp.abs(z) < z_max, z
 
 
 
