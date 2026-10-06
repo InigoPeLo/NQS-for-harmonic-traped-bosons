@@ -1,4 +1,4 @@
-# boson-trap
+# NQS for harmonic traped bosons
 
 Neural quantum state (Deep Sets + RBM + FFNN) for N bosons in a 2D harmonic trap, trained with Variational Monte Carlo (VMC) and Stochastic Reconfiguration (SR), written in plain JAX.
 
