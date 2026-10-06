@@ -15,3 +15,9 @@ dependencies = [
 # uv only manages the environment and the dependencies. Modules are imported as src.nqs, src.sampler...
 [tool.uv]
 package = false
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+    "matplotlib>=3.11.2",
+]

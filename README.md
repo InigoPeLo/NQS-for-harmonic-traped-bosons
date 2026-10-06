@@ -9,7 +9,7 @@ Neural quantum state (Deep Sets + RBM + FFNN) for N bosons in a 2D harmonic trap
 | [📁 Structure](docs/structure.md) | Project organization and responsibilities |
 | [🚀 Installation](docs/installation.md) | Requirements and steps to run the project |
 | [🧠 Technical decisions](docs/decisions.md) | Trade-offs and design justifications |
-| [📖 Usage guide](docs/usage.md) | Running training, reading results, tuning, common errors |
+| [📖 Usage guide](docs/usage.md) | Running training, reading results, analysis notebook, tuning, common errors |
 | [🔌 API](docs/api.md) | CLI and Python interface of the `src` modules |
 
 ---
@@ -32,14 +32,16 @@ With the shipped `config.toml` (N = 4, 150 SR iterations), the energy converges 
 
 ```
 Thermalization: z = 0.84
-Thermalization: acceptance = 0.57
 Iteration 1/150: E = 4.909703, Var(E) = 1.991309, acceptance = 0.56
 ...
 Final energy (mean of the last 15 iterations): E = 4.000001 +- 0.000011
 Exact energy: E_0 = 4.000000, relative error = 2.38e-07
 Final Var(E_loc) = 3.14e-05, alpha = 0.4865
+Final acceptance (mean of the last 20 iterations) = 0.45
 Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
 ```
+
+Larger systems need a different SR shift and learning rate. For N = 40, see [docs/usage.md](docs/usage.md#example-n--40).
 
 ## Technologies used
 
@@ -51,6 +53,7 @@ Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
 | Environment | uv | Manages the environment and dependencies. The project is not installed as a package |
 | Config | TOML | One section per component, unpacked straight into its constructor |
 | Output | `.npz` via `jnp.savez` | Final parameters and per-iteration history |
+| Analysis (dev group) | matplotlib, ipykernel | `notebooks/analysis.ipynb`: training curves, wavefunction checks, fixed-θ evaluation |
 
 ## Quick installation
 
@@ -88,6 +91,8 @@ boson-trap/
 │   ├── nqs.py        # Deep Sets encoder + RBM + FFNN + Gaussian envelope
 │   ├── sampler.py    # Metropolis sampler and thermalization check
 │   └── sr_optimizer.py # log-derivatives, S and F, SR update
+├── notebooks/
+│   └── analysis.ipynb # compares runs, checks ψ against the exact state, fixed-θ energy
 ├── notes/            # theory notes (PDF)
 └── results/          # one folder per run (git-ignored)
 ```

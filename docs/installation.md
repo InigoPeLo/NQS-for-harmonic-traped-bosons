@@ -26,7 +26,7 @@ cd NQS-for-harmonic-traped-bosons
 uv sync
 ```
 
-This creates `.venv/` with `jax[cuda12]`, its CUDA 12 wheels and NumPy. `pyproject.toml` sets `[tool.uv] package = false`, so the project itself is **not** installed. Modules are imported as `src.nqs`, `src.sampler`, … which only works when commands run from the project root.
+This creates `.venv/` with `jax[cuda12]`, its CUDA 12 wheels and NumPy. It also installs the `dev` dependency group (`matplotlib`, `ipykernel`), which only the analysis notebook needs. On a machine that only trains, use `uv sync --no-dev`. `pyproject.toml` sets `[tool.uv] package = false`, so the project itself is **not** installed. Modules are imported as `src.nqs`, `src.sampler`, … which only works when commands run from the project root.
 
 `uv.lock` and `.python-version` are committed. A fresh clone gets the same interpreter (3.14) and the exact package versions, including `jax`/`jaxlib` 0.11.2. To fail instead of silently re-resolving when the lockfile and `pyproject.toml` disagree:
 
@@ -65,18 +65,22 @@ uv run python train.py --config config.toml
    # 0.11.2 [CpuDevice(id=0)]       ← CPU fallback
    ```
 
-2. Run training with the shipped config. A healthy run passes both thermalization gates and ends near the exact energy:
+2. Run training with the N = 4 config. A healthy run passes the thermalization check (`|z| < 3`), ends near the exact energy and prints no acceptance warning:
 
    ```
    Thermalization: z = 0.84
-   Thermalization: acceptance = 0.57
    ...
    Exact energy: E_0 = 4.000000, relative error = 2.38e-07
    Final Var(E_loc) = 3.14e-05, alpha = 0.4865
+   Final acceptance (mean of the last 20 iterations) = 0.45
    Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
    ```
 
 On an RTX 5070 Laptop GPU, 21 iterations take about 16 s including JIT compilation. The full 150-iteration default run scales from that.
+
+## Notebook kernel
+
+`notebooks/analysis.ipynb` runs on the project's own environment, and `ipykernel` comes from the dev group. In VS Code, open the notebook, choose **Select Kernel → Python Environments** and pick `.venv/bin/python`. No Jupyter server needs to be installed.
 
 ## Troubleshooting
 
@@ -85,4 +89,5 @@ On an RTX 5070 Laptop GPU, 21 iterations take about 16 s including JIT compilati
 | `E... cuda_executor.cc ... CUDA_ERROR_OUT_OF_MEMORY` at startup, but training continues | JAX's default preallocation fails, then it retries with smaller blocks | Harmless. Silence it with `XLA_PYTHON_CLIENT_PREALLOCATE=false` |
 | `ModuleNotFoundError: No module named 'src'` | Script run from outside the project root | `cd` to the root, then `uv run python train.py` |
 | `FileNotFoundError: config.toml` | Same: the default `--config` is relative to the current directory | Run from the root or pass an absolute `--config` path |
+| Notebook: `ModuleNotFoundError: No module named 'matplotlib'` (or `src`) | Wrong kernel selected, or `uv sync --no-dev` was used | Select the `.venv` kernel and run `uv sync` |
 | uv refuses to resolve / "requires-python" error | Python < 3.14 selected (e.g. `.python-version` overridden by `UV_PYTHON`) | `uv python install 3.14`, and unset `UV_PYTHON` if it is set |

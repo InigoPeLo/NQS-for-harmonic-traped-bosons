@@ -5,7 +5,7 @@
 # These defaults converge to the exact energy E = N for N = 4.
 
 [system]            # boson_trap
-n_particles = 4     # number of bosons N
+n_particles = 40     # number of bosons N
 
 [network]           # NQS
 n_visible = 32      # latent dimension F of the Deep Sets encoder
@@ -16,16 +16,16 @@ init_scale = 0.01   # scale of the initial RBM weights W
 
 [sampler]           # MetroSampler
 n_chains = 256      # Markov chains run in parallel
-step_size = 0.4     # Metropolis step size delta (aim for ~50% acceptance)
+step_size = 0.125     # Metropolis step size delta (aim for ~50% acceptance)
 n_sweep = 10        # Metropolis steps between two recorded samples
 
 [sr]                # SR
-learning_rate = 0.05  # eta
-varepsilon = 1e-3     # diagonal shift epsilon of S
+learning_rate = 0.02  # eta
+varepsilon = 1     # diagonal shift epsilon of S
 
 [training]
-n_samples = 8           # recorded samples per chain and iteration (Ns = n_chains * n_samples)
-n_thermalization = 100  # sweeps discarded before training
-n_iter = 150            # number of SR iterations
+n_samples = 10          # recorded samples per chain and iteration (Ns = n_chains * n_samples)
+n_thermalization = 500  # sweeps discarded before training
+n_iter = 500            # number of SR iterations
 seed = 0                # seed of the random number generator
 output_dir = "results"  # every run is saved in its own folder results/N{N}_{date-time}/

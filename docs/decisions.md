@@ -53,7 +53,12 @@ The network outputs `log|ψ| + iφ`, while θ is real.
 
 `(Re S + εI) δθ = −η Re F` is solved with `jnp.linalg.solve`.
 
-- With the defaults, `Ns = n_chains · n_samples = 256 · 8 = 2048 < p = 2273`. S has rank at most `Ns − 1`, so it is singular, and the shift `ε` (`varepsilon = 1e-3` in the config, class default `1e-4`) is required, not just a safeguard.
+- With the defaults, `Ns = n_chains · n_samples = 256 · 8 = 2048 < p = 2273`. S has rank at most `Ns − 1`, so it is singular, and the shift `ε` (`varepsilon = 1e-3` for N = 4, class default `1e-4`) is required, not just a safeguard.
+- **ε is absolute, so it has to grow with N.** Sum pooling makes `H`, and with it every `O_k`, grow with N, so the scale of S grows roughly as N². The largest eigenvalue of `Re S` is 28 at N = 4 and 1.7·10⁵ at N = 40. There, `ε = 1e-3` no longer regularizes anything. `S + εI` has a condition number of ~10⁸, which is beyond float32's ~7 digits, and the update direction becomes noise:
+  - the energy *rises* even with a small η;
+  - after 2–3 steps the walkers fall behind ψ, `E_loc` goes below `E_0`, and the run turns NaN.
+
+  The same run in float64 is stable, which confirms precision is the cause. The fix used is per-N config: `varepsilon = 1.0`, `learning_rate = 0.02` for N = 40. A shift relative to `diag(S)` was tried: it is stable at N = 40 but slows N = 4 convergence severalfold, so it was not adopted.
 - S and F are sliced from one joint covariance of `(O, E_L)`. Computing S separately would repeat the `O(Ns·p²)` product for no benefit.
 - **Trade-off:** forming S costs `O(Ns·p²)` and the solve costs `O(p³)`, both per iteration. This dominates the run time and grows with the cube of network width. Iterative (CG) or minSR (`Ns × Ns`) solvers would avoid it but are not implemented.
 
@@ -69,12 +74,18 @@ The Laplacian is computed as `trace(jax.hessian(...))` over the `N·dim` coordin
 - **All-particle moves:** one Gaussian proposal moves every particle of a chain. It is simple and fully vectorized, but the acceptance rate drops as N grows at a fixed `step_size`.
 - **Thinning:** only the last configuration of each `n_sweep`-step sweep is recorded, which trades compute for less correlated samples.
 - **Walkers persist across iterations:** θ changes little per step, so the chains stay nearly in equilibrium and need no re-thermalization.
-- **Fixed step size with hard gates:** instead of adapting `step_size`, `train.py` aborts if the thermalization acceptance is outside `[0.4, 0.6]` and tells you which way to adjust it. This keeps sampler behaviour explicit and reproducible.
-- **Thermalization check:** `check_therm` compares the mean of `Σ|x_i|²` between the third and fourth quarters of the thermalization samples. Chains are independent, so the spread of per-chain drifts gives a standard error, and the run aborts if the drift exceeds 3σ.
+- **Fixed step size, final acceptance warning:** `step_size` is never adapted. After training, `train.py` prints the mean acceptance of the last 20 iterations and a `Warning:` if it is outside `[0.4, 0.6]`.
+  - **Why not check after thermalization:** that check used to abort the run, but it was removed. The acceptance always *drops* during training, because ψ narrows as α grows (`|ψ|²` has width `1/(2√α)`), and it only settles once ψ has converged: 0.56 → 0.45 at N = 4, 0.51 → 0.34 at N = 40. A check at the start measures the initial ψ, not the one that matters, and its upper bound prevented choosing a step suited to the final ψ.
+  - **Why not stop at a plateau:** a "plateau" detected from the acceptance alone gave false positives on slowly converging runs.
+  - **Why a warning and not an error:** a low acceptance does not bias the energy, it only makes the samples more correlated. The N = 40 run converged to `E = 40.07` with an acceptance of 0.34.
+- **Thermalization check:** `check_therm` compares the mean of `Σ|x_i|²` between the third and fourth quarters of the thermalization samples. Chains are independent, so the spread of per-chain drifts gives a standard error, and the run aborts if the drift exceeds 3σ. With fewer than 4 samples per chain the quarters would be empty and `z` would be NaN, so `check_therm` raises a `ValueError` with an explicit message instead.
 
 ## Final energy estimate
 
-`train.py` reports the mean of the last 10% of iterations, with an error bar `std/√n_last`. As the code comment says, this ignores correlation between iterations and is only indicative. A rigorous estimate needs a long sampling run at fixed θ, which is not implemented.
+`train.py` reports the mean of the last 10% of iterations, with an error bar `std/√n_last`. As the code comment says, this ignores correlation between iterations and is only indicative. The rigorous estimate, a long sampling run at fixed θ, lives in `notebooks/analysis.ipynb` (section 5), not in `train.py`:
+
+- **Error bar from independent chains:** the error comes from the spread of per-chain means. Chains are independent, so this accounts for autocorrelation without a blocking analysis.
+- **Training stays lean:** evaluation is optional and can be redone with more samples on any saved run without retraining, since each run stores `theta` and its config.
 
 ## Config-to-constructor mapping
 

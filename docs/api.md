@@ -14,7 +14,7 @@ uv run python train.py [--config PATH]
 
 **Output:** creates `{training.output_dir}/N{n_particles}_{YYYYmmdd-HHMMSS-ffffff}/` containing `results.npz` and `config.toml`. `main()` also returns `(model, params)` when imported.
 
-**Exit with error (`RuntimeError`)** if the thermalization drift is `|z| ≥ 3` or the acceptance is outside `[0.4, 0.6]`. See [usage.md](usage.md#common-errors).
+**Exit with error (`RuntimeError`)** if the thermalization drift is `|z| ≥ 3`. If the mean acceptance of the last 20 iterations is outside `[0.4, 0.6]`, it prints a `Warning:` line but still saves the run. See [usage.md](usage.md#common-errors).
 
 ## Conventions
 
@@ -88,7 +88,7 @@ model.apply(params, jnp.zeros((4, 2)))     # complex scalar
 | `init_walkers` | `(key, n_particles, dim)` | `(n_chains, N, dim)` drawn from `N(0, I)` |
 | `step` | `(log_psi, (walkers, log_prob), key)` | `((walkers, log_prob), accept (n_chains,))`, one Metropolis step in `lax.scan` form |
 | `sample` | `(log_psi, walkers, n_samples, key)` | `(samples (n_samples·n_chains, N, dim), walkers, mean_acceptance)` |
-| `check_therm` | `(samples, z_max=3.0)` | `(thermalized: bool, z)` |
+| `check_therm` | `(samples, z_max=3.0)` | `(thermalized: bool, z)`. Raises `ValueError` with fewer than 4 samples per chain |
 
 `sample` runs `n_samples` sweeps of `n_sweep` steps and records one configuration per chain per sweep. Sample order is sweep-major (`reshape` of `(n_samples, n_chains, …)`), and `check_therm` relies on that order.
 
@@ -108,7 +108,7 @@ samples, walkers, acc = sampler.sample(lambda x: model.apply(params, x), walkers
 | `log_derivatives` | `(theta, log_psi, samples)` | `O (Ns, p)` complex, `O_k = ∂_θk log ψ` |
 | `compute_S_F` | `(O, E_loc)` | `S (p, p)`, `F (p,)`, both complex covariances, sliced from one joint covariance of `(O, E_loc)` |
 | `SR(learning_rate, varepsilon=1e-4)` | dataclass | — |
-| `SR.step` | `(theta, log_psi, samples, E_loc)` | `(theta_new, [mean(Re E_loc), Var(E_loc)])` |
+| `SR.step` | `(theta, log_psi, samples, E_loc)` | `(theta_new, [mean(Re E_loc), Var(E_loc)])`, where `Var` is over the complex `E_loc` (real + imaginary parts) |
 
 `SR.step` solves `(Re S + εI) δθ = −η Re F` and returns `θ + δθ`.
 

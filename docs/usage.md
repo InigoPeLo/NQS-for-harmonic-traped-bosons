@@ -10,12 +10,12 @@ uv run python train.py
 
 A run goes through three phases:
 
-1. **Thermalization:** `n_thermalization` sweeps from walkers drawn from `N(0, I)`. Two gates must pass:
+1. **Thermalization:** `n_thermalization` sweeps from walkers drawn from `N(0, I)`. The run aborts unless the chains have stopped drifting:
    ```
    Thermalization: z = 0.84          # drift of <Σ|x|²> in σ; must be |z| < 3
-   Thermalization: acceptance = 0.57 # must be in [0.4, 0.6]
    ```
-2. **SR loop:** progress is printed every 10 iterations:
+   The acceptance is not checked here. ψ is still the initial one, and the acceptance only drops from this point (see step 3).
+2. **SR loop:** progress is printed every 10 iterations and at the last one:
    ```
    Iteration 1/150: E = 4.909703, Var(E) = 1.991309, acceptance = 0.56
    Iteration 11/150: E = 4.124274, Var(E) = 0.222942, acceptance = 0.49
@@ -26,8 +26,13 @@ A run goes through three phases:
    Final energy (mean of the last 15 iterations): E = 4.000001 +- 0.000011
    Exact energy: E_0 = 4.000000, relative error = 2.38e-07
    Final Var(E_loc) = 3.14e-05, alpha = 0.4865
+   Final acceptance (mean of the last 20 iterations) = 0.45
    Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
    ```
+   If the final acceptance is outside `[0.4, 0.6]`, an extra line says which way to change `step_size` **for the next run**, for example `Warning: final acceptance 0.15 below 0.4, decrease step_size in the config for the next run`. The run is still saved: a low acceptance makes the samples more correlated but does not bias E.
+
+   The acceptance falls during training because ψ narrows as α grows, and it settles once ψ has converged: 0.56 → 0.45 at N = 4. Choose `step_size` for the *final* value, not the initial one.
+
    α ending slightly below 0.5 (the pure-Gaussian value `ω/2`) while E is exact is expected. The RBM can supply part of the quadratic decay, so only the *total* Gaussian width has to match `ω/2`. Use `Var(E_loc)` as the convergence check, not α.
 
 ## 2. Use your own config
@@ -55,17 +60,48 @@ dim = 3
 For N = 4 this converges to the exact `E_0 = 4·3/2 = 6`:
 
 ```
-Thermalization: acceptance = 0.47
+Iteration 1/150: E = 7.396373, Var(E) = 3.191899, acceptance = 0.47
 Iteration 141/150: E = 5.999976, Var(E) = 0.000014, acceptance = 0.34
 Final energy (mean of the last 15 iterations): E = 6.000006 +- 0.000010
 Exact energy: E_0 = 6.000000, relative error = 1.03e-06
 ```
 
-In 3D the acceptance passes the thermalization gate but falls to ~0.34 during training, because the wavefunction narrows and the gate is checked only once. A `step_size` of about 0.3 keeps it closer to 50%.
+In 3D the acceptance falls from 0.47 to ~0.34 during training, so the final acceptance warning fires with `step_size = 0.4`, even though the energy is exact. A `step_size` of about 0.3 keeps it closer to 50%.
+
+### Example: N = 40
+
+The N = 4 SR settings diverge at N = 40: the energy drops *below* `E_0` within 2–3 iterations, then turns NaN. The scale of S grows ~N² (see [decisions.md](decisions.md#sr-solver-dense-solve-with-diagonal-shift)), so `varepsilon` must grow and `learning_rate` shrink. Settings tested at N = 40, 2D, 150 iterations:
+
+| `varepsilon` | `learning_rate` | Final E (`E_0 = 40`) | Final `Var(E)` |
+|---|---|---|---|
+| 1e-3 | 0.05, 0.01, 0.005 | NaN | NaN |
+| 1 | 0.001 | 62.9 | 63 |
+| 1 | 0.01 | 40.71 | 1.04 |
+| **1** | **0.02** | **40.07** | **0.16** |
+
+```toml
+[system]
+n_particles = 40
+
+[sampler]
+step_size = 0.15
+
+[sr]
+learning_rate = 0.02
+varepsilon = 1.0
+
+[training]
+n_thermalization = 500
+n_iter = 300          # at 150 iterations it is still improving (relative error 1.8e-3)
+```
+
+With `step_size = 0.15`, the acceptance ends at ~0.34 and the final warning fires. Keep the N = 4 settings and the N = 40 settings in separate files (e.g. `configs/n40.toml`), since each needs its own SR values. Each run takes ~30 s per 150 iterations on an RTX 5070 Laptop GPU.
 
 ### Parameters
 
-| Section.key | Default | Effect |
+Values are those of the N = 4 configuration. For N = 40, see the example above.
+
+| Section.key | N = 4 value | Effect |
 |---|---|---|
 | `system.n_particles` | 4 | Number of bosons N. Exact energy `E_0 = N·dim·ω/2` (= N with the defaults) |
 | `system.dim` | 2 *(not in file)* | Spatial dimension of each particle. Also sets the encoder input size. Put it **only** in `[system]` |
@@ -76,10 +112,10 @@ In 3D the acceptance passes the thermalization gate but falls to ~0.34 during tr
 | `network.alpha` | 0.3 | Initial Gaussian width parameter (exact `ω/2`) |
 | `network.init_scale` | 0.01 | Std of the initial RBM weights |
 | `sampler.n_chains` | 256 | Parallel Markov chains |
-| `sampler.step_size` | 0.4 | Metropolis step δ |
+| `sampler.step_size` | 0.4 | Metropolis step δ. Choose it so the *final* acceptance is in `[0.4, 0.6]` |
 | `sampler.n_sweep` | 10 | Metropolis steps between recorded samples |
 | `sr.learning_rate` | 0.05 | η |
-| `sr.varepsilon` | 1e-3 | Diagonal shift ε on S |
+| `sr.varepsilon` | 1e-3 | Diagonal shift ε on S. Absolute, so it must grow with N (1.0 at N = 40). Write it as a float (`1.0`) |
 | `training.n_samples` | 8 | Recorded samples per chain per iteration (`Ns = n_chains · n_samples`) |
 | `training.n_thermalization` | 100 | Sweeps discarded before training |
 | `training.n_iter` | 150 | SR iterations |
@@ -130,6 +166,40 @@ For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and eac
 
 `variance` going to 0 is the cleanest convergence signal. For an exact eigenstate `E_loc` is constant, so `Var(E_loc) = 0` regardless of sampling noise.
 
+`variance` is the variance of the **complex** `E_loc`, so it includes the imaginary part. The imaginary part averages to 0 but is not constant unless the learned phase is exactly flat. In the default 2D run, the fixed-θ evaluation of the notebook splits the final value as `3.0e-06` (real) + `3.3e-05` (imaginary). In other words, the floor seen at the end of training comes mostly from the phase network, not from errors in the amplitude.
+
+## 5. Analysis notebook
+
+`notebooks/analysis.ipynb` loads every run in the folders of `RESULTS_DIRS` (default `[ROOT / "results"]`; add more to compare runs saved elsewhere). Open it with the `.venv` kernel; re-running it picks up new runs. Its sections:
+
+| Section | What it shows | What to look for |
+|---|---|---|
+| 1. Load the runs | Numbered list of all runs, sorted by date, with N, d, δ, η, ε, iterations, `E_final` and status (`converged`, `rel err …`, `DIVERGED` for NaN/inf) | Which runs exist and which `#` to select |
+| 1b. Choose the runs | The filters below. Produces `runs`, used by every later section | — |
+| Summary table | `E_final ± err`, relative error, `Var(E)`, final acceptance, α, iterations to reach `REL_TOL = 1e-3` | Same numbers as the `train.py` summary, for the selected runs side by side |
+| 2. Training curves | `E/E_0`, relative error, `Var(E_loc)`, acceptance (green band `[0.4, 0.6]`), α, relative error vs variance | `Var(E_loc)` falling; acceptance staying in the band |
+| 3. Acceptance vs convergence | Acceptance drift per run against iterations to `REL_TOL` and final variance | Whether low final acceptance correlates with slower convergence |
+| 4. Trained wavefunction | Cut of `log\|ψ\|` and phase with particle 0 on the x axis, vs exact `−ω x²/2` | Default run: max deviation `2.9e-04`, phase flat to `1.2e-03` for \|x\| < 2 |
+| 5. Final evaluation at fixed θ | Fresh sampling (`N_THERM = N_EVAL = 200` sweeps), `E ± err` from per-chain means, `Var` split into real and imaginary parts, one-body density | Default run: `E = 3.999992 ± 0.000008` (−1.0σ from `E_0`), `<\|x_i\|²> = 0.998` vs exact `1.000` |
+
+- **Selecting runs (section 1b):** filters left as `None` are ignored, and the ones that are set must all pass.
+
+  ```python
+  SELECT_INDEX  = [0, 4]                                  # by # in the list of section 1
+  SELECT_NAMES  = ["N4_20261006-121907"]                  # by folder name (unknown names are reported)
+  SELECT_N      = [40]                                    # by number of particles
+  SELECT_DIM    = [2]                                     # by dimension
+  SELECT_WHERE  = lambda r: r["cfg"]["sr"]["learning_rate"] >= 0.01   # any condition on a run
+  SELECT_LAST   = 3                                       # most recent ones, after the other filters
+  SKIP_DIVERGED = True                                    # drop runs with NaN/inf (default)
+  ```
+
+  If no run passes, the cell raises `ValueError: No run passes the filters`.
+- **Choosing the run for sections 4–5:** `RUN_NAME = "N4_20261006-121907"`, or `None` for the most recent selected run. It must be among the selected runs and not diverged; otherwise the cell raises a `ValueError` saying why.
+- **Memory:** section 5 evaluates `E_loc` in batches of `n_chains · n_samples` configurations, the size of one training iteration. All 51 200 samples at once do not fit in 8 GB of GPU memory at N = 40, because each needs an `(N·dim)²` Hessian.
+- **Error bar:** section 5 is the proper energy estimate. Chains are independent, so the spread of chain means gives an error bar that accounts for autocorrelation within each chain. The `train.py` figure does not.
+- **Precision:** raise `N_EVAL` for a smaller error bar. The error scales as `1/√N_EVAL`, and the cost grows linearly with it.
+
 ## Edge cases and limits
 
 - **`omega ≠ 1`.** The Hamiltonian and `exact_energy` handle it. The pure-Gaussian value of α becomes `ω/2`, so consider setting `network.alpha` near it.
@@ -141,11 +211,13 @@ For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and eac
 
 | Message | Meaning | Fix |
 |---|---|---|
-| `RuntimeError: Chains have not thermalized: z = … > 3.0` | `<Σ\|x\|²>` still drifting at the end of thermalization | Increase `training.n_thermalization` |
-| `RuntimeError: Acceptance … too low (< 0.4)` | Steps too large, most moves rejected | Decrease `sampler.step_size` |
-| `RuntimeError: Acceptance … too high (> 0.6)` | Steps too small, chains barely move | Increase `sampler.step_size` |
+| `RuntimeError: Chains have not thermalized: z = … > 3.0` | `<Σ\|x\|²>` still drifting at the end of thermalization (the test is on `\|z\|`, so it also fires for negative `z`) | Increase `training.n_thermalization` |
+| `ValueError: check_therm needs at least 4 samples per chain, got …` | `training.n_thermalization < 4`, too few sweeps to compare the third and fourth quarters | Set `n_thermalization ≥ 4` (default 100) |
+| `Warning: final acceptance … below 0.4` (run still saved) | Steps too large for the converged ψ: samples are strongly correlated | Decrease `sampler.step_size` for the next run |
+| `Warning: final acceptance … above 0.6` (run still saved) | Steps too small: chains barely move | Increase `sampler.step_size` for the next run |
 | `TypeError: … got an unexpected keyword argument '…'` | A config key does not match a dataclass field | Fix the spelling in the matching section (see [api.md](api.md)) |
 | `TypeError: … got multiple values for keyword argument 'dim'` | `dim` was put in `[network]` | Move it to `[system]`. `train.py` passes it to `NQS` itself |
 | `ValueError: Sum of sizes … must be equal to dimension 0 of the operand shape …` when loading a run | `NQS` rebuilt with a different `dim` (or network sizes) than the run | Pass `dim=cfg["system"].get("dim", 2)` and use the run's own `config.toml` |
 | `KeyError: 'training'` / `'n_iter'` | Missing section or key in a custom config | All `[training]` keys are required. Start from `config.toml` |
 | Energy oscillates or goes to NaN | SR step too aggressive, or S badly conditioned | Lower `sr.learning_rate`, raise `sr.varepsilon`, or increase `Ns` |
+| Energy goes *below* `E_0`, then NaN, at large N | `varepsilon` too small for the scale of S, which grows ~N² | Raise `sr.varepsilon` (1.0 at N = 40) and lower `learning_rate` (0.02 at N = 40) |

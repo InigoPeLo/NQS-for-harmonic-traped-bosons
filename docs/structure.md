@@ -4,7 +4,7 @@
 boson-trap/
 ├── train.py              # entry point (CLI)
 ├── config.toml           # run parameters
-├── pyproject.toml        # metadata + dependencies; uv in non-package mode
+├── pyproject.toml        # metadata + dependencies (+ dev group); uv in non-package mode
 ├── .python-version       # 3.14; uv picks this interpreter
 ├── uv.lock               # exact resolved versions (jax/jaxlib 0.11.2, numpy 2.5.3, CUDA wheels)
 ├── src/
@@ -13,6 +13,8 @@ boson-trap/
 │   ├── nqs.py            # neural wavefunction
 │   ├── sampler.py        # Metropolis sampler
 │   └── sr_optimizer.py   # Stochastic Reconfiguration
+├── notebooks/
+│   └── analysis.ipynb    # post-processing of results/ (stored without outputs)
 ├── notes/
 │   └── NQS_TrappedBosons.pdf   # theory: Hamiltonian, ansatz, VMC, SR derivations
 └── results/              # git-ignored; one subfolder per run
@@ -50,6 +52,9 @@ The modules communicate only through callables and arrays, never by importing ea
 ### `config.toml`
 The sections `[system]`, `[network]`, `[sampler]` and `[sr]` are unpacked with `**` into `boson_trap`, `NQS`, `MetroSampler` and `SR`. Their keys **must match the dataclass field names**. `[training]` holds loop-level settings that belong to no class.
 
+### `notebooks/`
+Post-processing only. `analysis.ipynb` reads every run in the folders of `RESULTS_DIRS` (default `results/`), lets you filter which ones to analyse, and never trains. It finds the project root by walking up to `pyproject.toml` and adds it to `sys.path`, so it imports `src.*` like `train.py` does. It can rebuild and sample a trained wavefunction because each run stores its own `config.toml`. It depends on the dev group (`matplotlib`, `ipykernel`), never on code in `train.py`.
+
 ### `notes/`
 Reference material only, not read by the code. Comments in `src/nqs.py` cite its equations (eq. 58, eq. 64, section 6.2.1).
 
@@ -60,5 +65,6 @@ Generated output, git-ignored. Folder names encode `N` and the timestamp at save
 
 - **Mutable state in the component classes:** they are frozen dataclasses on purpose. Parameters, walkers and keys are passed in and returned. Storing them on `self` would break `jit` purity and hashing.
 - **Hyperparameters hard-coded in `train.py`:** add them as a dataclass field and a matching key in the config section. The `**cfg[...]` unpacking picks them up automatically.
-- **Analysis code in `train.py`:** it saves everything needed (`theta`, history, config). Post-processing should load `results.npz` from a separate script or notebook.
-- **Run outputs in git:** `results/` is ignored.
+- **Analysis code in `train.py`:** it saves everything needed (`theta`, history, config). Post-processing belongs in `notebooks/`.
+- **Run outputs in git:** `results/` is ignored. For the same reason, clear the notebook outputs before committing, since embedded figures make large, noisy diffs.
+- **Plotting libraries in `[project] dependencies`:** they go in the dev group, so a training-only install (`uv sync --no-dev`) stays at JAX alone.

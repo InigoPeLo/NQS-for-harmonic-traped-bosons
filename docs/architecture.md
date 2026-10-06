@@ -73,7 +73,7 @@ Both come from a single `jnp.cov` call (with `bias=True`) on the joint variables
 
 $$(\mathrm{Re}\,S + \varepsilon I)\,\delta\theta = -\eta\,\mathrm{Re}\,F,\qquad \theta \leftarrow \theta + \delta\theta$$
 
-solved with a dense `jnp.linalg.solve`. `SR.step` also returns `[mean(E_L), var(E_L)]`. As θ approaches an eigenstate, `var(E_L)` goes to 0 (the zero-variance property), which makes it a convergence check independent of the energy.
+solved with a dense `jnp.linalg.solve`. `SR.step` also returns `[mean(E_L), var(E_L)]`. As θ approaches an eigenstate, `var(E_L)` goes to 0 (the zero-variance property), which makes it a convergence check independent of the energy. `jnp.var` is taken over the complex `E_L`, so the reported value is `Var(Re E_L) + Var(Im E_L)`. The imaginary part is not constant unless the learned phase is exactly flat.
 
 ## Data flow of a run
 
@@ -82,12 +82,13 @@ config.toml ─► load_config ─► boson_trap / NQS / MetroSampler / SR
                                         │
 PRNGKey(seed) ─split─► key_params ─► NQS.init ─► params ─ravel_pytree─► θ, unravel
                     ├─► key_walkers ─► init_walkers ─► walkers (n_chains, N, 2) ~ N(0, I)
-                    ├─► key_therm ──► sample(n_thermalization sweeps) ─► check_therm + acceptance gate
+                    ├─► key_therm ──► sample(n_thermalization sweeps) ─► check_therm (|z| < 3)
                     └─► key_train ──► for n in n_iter:
                                          train_step(θ, walkers, key)   ← jax.jit
                                            ├ sample(n_samples sweeps)   walkers carried over
                                            ├ batch_local_energy         E_L (Ns,)
                                            └ SR.step                    θ_new, [E, Var]
+                                       ─► summary + final acceptance warning (last 20 iterations)
                                        ─► save_results ─► results/N{N}_{YYYYmmdd-HHMMSS-ffffff}/
 ```
 

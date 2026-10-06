@@ -59,7 +59,7 @@ def make_train_step(log_psi, sampler, system, sr, n_samples):
     @jax.jit
     def train_step(theta, walkers, key):
         """One SR iteration: sample with the current theta, compute E_loc and update theta.
-        Returns the new theta, the new walkers, [energy, variance] and the acceptance rate."""
+       Returns the new theta, the new walkers, [energy, variance], the acceptance rate and the std of the phase."""
 
         #log_psi as a function of x only, with the theta of this iteration fixed
         log_psi_x = lambda x: log_psi(theta, x)
@@ -73,7 +73,12 @@ def make_train_step(log_psi, sampler, system, sr, n_samples):
         #SR differentiates with respect to theta, so it takes log_psi(theta, x)
         theta_new, stats = sr.step(theta, log_psi, samples, E_loc)
 
-        return theta_new, walkers, stats, acceptance
+        #Spread of the phase over the samples. It is 0 when the phase is constant, as it must be for the
+        #bosonic ground state (a global phase does not matter, so we use the std and not the mean)
+        phase_std = jnp.std(jnp.imag(jax.vmap(log_psi_x)(samples)))
+
+        return theta_new, walkers, stats, acceptance, phase_std
+
 
     return train_step
 
@@ -111,7 +116,7 @@ def main():
     #We evaluate log_psi for the initial walkers to get the starting log_prob
     log_psi_x = lambda x: log_psi(theta, x)
 
-    sample_therm, walkers, accepts_mean=sampler.sample(log_psi_x, walkers, train_cfg["n_thermalization"], key_therm)
+    sample_therm, walkers, accepts_mean =sampler.sample(log_psi_x, walkers, train_cfg["n_thermalization"], key_therm)
 
     #We check if the chains have thermalized, and raise an error if not.
     thermalized, z=sampler.check_therm(sample_therm)
@@ -119,13 +124,7 @@ def main():
     if not thermalized:
         raise RuntimeError(f"Chains have not thermalized: z = {float(z):.2f} > 3.0, increase n_thermalization in the config")
 
-    #The acceptance rate must be close to 50%: if it is too low the step is too large and almost every move
-    #is rejected, if it is too high the step is too small and the chains barely move. Both give long autocorrelations
-    print(f"Thermalization: acceptance = {float(accepts_mean):.2f}")
-    if accepts_mean < 0.4:
-        raise RuntimeError(f"Acceptance {float(accepts_mean):.2f} too low (< 0.4): decrease step_size in the config")
-    if accepts_mean > 0.6:
-        raise RuntimeError(f"Acceptance {float(accepts_mean):.2f} too high (> 0.6): increase step_size in the config")
+
 
     #Now we can make the trainig loop
 
@@ -136,15 +135,17 @@ def main():
     variance_list = []
     acceptance_list = []
     alpha_list = []
+    phase_std_list=[]
 
     for n in range(train_cfg["n_iter"]):
         key_train, key_iter = jax.random.split(key_train)
-        theta, walkers, (energy, variance), acceptance = train_step(theta, walkers, key_iter)
+        theta, walkers, (energy, variance), acceptance, phase_std= train_step(theta, walkers, key_iter)
         energy_list.append(energy)
         variance_list.append(variance)
         acceptance_list.append(acceptance)
         #alpha of the Gaussian envelope after this update
         alpha_list.append(jax.nn.softplus(unravel(theta)["alpha_tilde"]))
+        phase_std_list.append(phase_std)
 
         if n % 10 == 0 or n == train_cfg["n_iter"] - 1:
             print(f"Iteration {n+1}/{train_cfg['n_iter']}: E = {float(energy):.6f}, Var(E) = {float(variance):.6f}, acceptance = {float(acceptance):.2f}")
@@ -163,8 +164,19 @@ def main():
     print(f"Exact energy: E_0 = {system.exact_energy:.6f}, relative error = {abs(E_final - system.exact_energy) / system.exact_energy:.2e}")
     print(f"Final Var(E_loc) = {float(variance_list[-1]):.2e}, alpha = {float(alpha_list[-1]):.4f}")
 
+    #The acceptance drops while psi narrows and settles once it has converged, so we check the mean of the
+    #last iterations. A low acceptance does not bias E, it makes the samples more correlated, so it is only a warning
+    n_acc = min(20, len(acceptance_list))
+    acc_final = float(jnp.mean(jnp.array(acceptance_list[-n_acc:])))
+    print(f"Final acceptance (mean of the last {n_acc} iterations) = {acc_final:.2f}")
+    if acc_final < 0.4:
+        print(f"Warning: final acceptance {acc_final:.2f} below 0.4, decrease step_size in the config for the next run")
+    elif acc_final > 0.6:
+        print(f"Warning: final acceptance {acc_final:.2f} above 0.6, increase step_size in the config for the next run")
+
     #Save theta, the history and a copy of the config to analyse the run later without training again
-    history = {"energy": energy_list, "variance": variance_list, "acceptance": acceptance_list, "alpha": alpha_list}
+    history = {"energy": energy_list, "variance": variance_list, "acceptance": acceptance_list,
+               "alpha": alpha_list, "phase_std": phase_std_list}
     run_dir = save_results(train_cfg["output_dir"], config_path, system.n_particles, theta, history)
     print(f"Results saved in {run_dir}")
 
