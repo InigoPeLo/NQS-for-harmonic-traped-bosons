@@ -100,6 +100,9 @@ class MetroSampler:
         #sum_i |x_i|^2 per sample, splitting again sweeps and chains: (n_samples, n_chains)
         r2 = jnp.sum(samples**2, axis=(1, 2)).reshape(-1, self.n_chains)
 
+        if r2.shape[0] < 4:
+            raise ValueError(f"check_therm needs at least 4 samples per chain, got {r2.shape[0]}: increase n_thermalization")
+
         q = r2.shape[0] // 4 #We ignore the first 2 quarters of the samples,
         d = jnp.mean(r2[3*q:], axis=0) - jnp.mean(r2[2*q:3*q], axis=0)  #drift of every chain
         z = jnp.mean(d) / (jnp.std(d) / jnp.sqrt(self.n_chains))

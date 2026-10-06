@@ -25,10 +25,10 @@ A run goes through three phases:
    ```
    Final energy (mean of the last 15 iterations): E = 4.000001 +- 0.000011
    Exact energy: E_0 = 4.000000, relative error = 2.38e-07
-   Final Var(E_loc) = 3.14e-05, alpha = 0.4865 (exact 0.5)
-   Results saved in results/N4_20261006-121907
+   Final Var(E_loc) = 3.14e-05, alpha = 0.4865
+   Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
    ```
-   α ending slightly below 0.5 while E is exact is expected. The RBM can supply part of the quadratic decay, so only the *total* Gaussian width has to match `ω/2`. Use `Var(E_loc)` as the convergence check, not α.
+   α ending slightly below 0.5 (the pure-Gaussian value `ω/2`) while E is exact is expected. The RBM can supply part of the quadratic decay, so only the *total* Gaussian width has to match `ω/2`. Use `Var(E_loc)` as the convergence check, not α.
 
 ## 2. Use your own config
 
@@ -42,11 +42,33 @@ uv run python train.py --config configs_n8.toml
 
 The file is copied into the run folder, so a run can always be reproduced.
 
+### Example: 3D trap
+
+Add `dim = 3` to `[system]` and leave everything else at the defaults:
+
+```toml
+[system]
+n_particles = 4
+dim = 3
+```
+
+For N = 4 this converges to the exact `E_0 = 4·3/2 = 6`:
+
+```
+Thermalization: acceptance = 0.47
+Iteration 141/150: E = 5.999976, Var(E) = 0.000014, acceptance = 0.34
+Final energy (mean of the last 15 iterations): E = 6.000006 +- 0.000010
+Exact energy: E_0 = 6.000000, relative error = 1.03e-06
+```
+
+In 3D the acceptance passes the thermalization gate but falls to ~0.34 during training, because the wavefunction narrows and the gate is checked only once. A `step_size` of about 0.3 keeps it closer to 50%.
+
 ### Parameters
 
 | Section.key | Default | Effect |
 |---|---|---|
-| `system.n_particles` | 4 | Number of bosons N. Exact energy `E_0 = N` (for ω = 1, dim = 2) |
+| `system.n_particles` | 4 | Number of bosons N. Exact energy `E_0 = N·dim·ω/2` (= N with the defaults) |
+| `system.dim` | 2 *(not in file)* | Spatial dimension of each particle. Also sets the encoder input size. Put it **only** in `[system]` |
 | `system.omega` | 1.0 *(not in file)* | Trap frequency. Can be added to `[system]` |
 | `network.n_visible` | 32 | Latent size F of the Deep Sets encoder |
 | `network.n_hidden_rbm` | 32 | Hidden units M of the amplitude RBM |
@@ -64,7 +86,7 @@ The file is copied into the run folder, so a run can always be reproduced.
 | `training.seed` | 0 | PRNG seed. Same seed and config give the same run on the same device |
 | `training.output_dir` | `"results"` | Parent folder for run outputs |
 
-Network size controls the cost: `p = 3F + M(F+1) + F + K(F+2) + 1` parameters, and SR scales as `O(p³)` per iteration. If you enlarge the network, also raise `n_chains · n_samples` towards `p`, or raise `varepsilon`.
+Network size controls the cost: `p = (dim+1)F + M(F+1) + F + K(F+2) + 1` parameters, and SR scales as `O(p³)` per iteration. If you enlarge the network, also raise `n_chains · n_samples` towards `p`, or raise `varepsilon`.
 
 ## 3. Load a trained wavefunction
 
@@ -80,11 +102,12 @@ with open(f"{run}/config.toml", "rb") as f:
     cfg = tomllib.load(f)
 data = jnp.load(f"{run}/results.npz")
 
-model = NQS(**cfg["network"])
+dim = cfg["system"].get("dim", 2)   # same default as boson_trap
+model = NQS(**cfg["network"], dim=dim)
 _, unravel = flatten_params(model.init(jax.random.PRNGKey(0)))  # any key: only the structure is used
 params = unravel(jnp.asarray(data["theta"]))
 
-x = jnp.zeros((cfg["system"]["n_particles"], 2))
+x = jnp.zeros((cfg["system"]["n_particles"], dim))
 print(model.apply(params, x))                       # complex log ψ(x)
 print(float(jax.nn.softplus(params["alpha_tilde"])))  # trained α
 ```
@@ -109,9 +132,8 @@ For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and eac
 
 ## Edge cases and limits
 
-- **`dim` is fixed at 2.** `boson_trap` has a `dim` field, but `NQS` builds its encoder as `DSE(n_neurons=…)` with the default `dim=2` and does not pass it through. Setting `dim = 3` in `[system]` fails inside `DSE.apply` with `TypeError: dot_general requires contracting dimensions to have the same shape, got (3,) and (2,)`.
-- **`omega ≠ 1`.** The Hamiltonian and `exact_energy` handle it. The printed "(exact 0.5)" for α is hard-coded, and the correct target is `ω/2`.
-- **Larger N.** The all-particle move makes acceptance fall at a fixed `step_size`, so expect to lower `step_size` as N grows. The Hessian-based Laplacian costs `(2N)²` per sample.
+- **`omega ≠ 1`.** The Hamiltonian and `exact_energy` handle it. The pure-Gaussian value of α becomes `ω/2`, so consider setting `network.alpha` near it.
+- **Larger N or `dim`.** The all-particle move makes acceptance fall at a fixed `step_size`, so expect to lower `step_size` as `N·dim` grows. The Hessian-based Laplacian costs `(N·dim)²` per sample.
 - **The final error bar is indicative only.** It treats the last 10% of iterations as independent.
 - **Interrupting a run** (Ctrl-C) saves nothing, because results are written only at the end.
 
@@ -123,5 +145,7 @@ For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and eac
 | `RuntimeError: Acceptance … too low (< 0.4)` | Steps too large, most moves rejected | Decrease `sampler.step_size` |
 | `RuntimeError: Acceptance … too high (> 0.6)` | Steps too small, chains barely move | Increase `sampler.step_size` |
 | `TypeError: … got an unexpected keyword argument '…'` | A config key does not match a dataclass field | Fix the spelling in the matching section (see [api.md](api.md)) |
+| `TypeError: … got multiple values for keyword argument 'dim'` | `dim` was put in `[network]` | Move it to `[system]`. `train.py` passes it to `NQS` itself |
+| `ValueError: Sum of sizes … must be equal to dimension 0 of the operand shape …` when loading a run | `NQS` rebuilt with a different `dim` (or network sizes) than the run | Pass `dim=cfg["system"].get("dim", 2)` and use the run's own `config.toml` |
 | `KeyError: 'training'` / `'n_iter'` | Missing section or key in a custom config | All `[training]` keys are required. Start from `config.toml` |
 | Energy oscillates or goes to NaN | SR step too aggressive, or S badly conditioned | Lower `sr.learning_rate`, raise `sr.varepsilon`, or increase `Ns` |

@@ -16,7 +16,7 @@ boson-trap/
 ├── notes/
 │   └── NQS_TrappedBosons.pdf   # theory: Hamiltonian, ansatz, VMC, SR derivations
 └── results/              # git-ignored; one subfolder per run
-    └── N4_20261006-121907/
+    └── N4_20261006-121907/      # current runs: N4_YYYYmmdd-HHMMSS-ffffff/
         ├── config.toml   # copy of the config used
         └── results.npz   # theta + training history
 ```
@@ -54,7 +54,7 @@ The sections `[system]`, `[network]`, `[sampler]` and `[sr]` are unpacked with `
 Reference material only, not read by the code. Comments in `src/nqs.py` cite its equations (eq. 58, eq. 64, section 6.2.1).
 
 ### `results/`
-Generated output, git-ignored. Folder names encode `N` and the start timestamp, so runs never overwrite each other.
+Generated output, git-ignored. Folder names encode `N` and the timestamp at save time down to microseconds (`N{N}_{YYYYmmdd-HHMMSS-ffffff}`), so runs launched in parallel don't collide. The four existing runs predate the microsecond suffix and are named `N4_YYYYmmdd-HHMMSS`.
 
 ## What should not go where
 

@@ -120,6 +120,7 @@ class NQS:
     n_hidden_ffnn: int #K
     alpha: float #Gaussian envelope parameter
     init_scale: float=0.01
+    dim: int=2 #Dimension of each particle's coordinates, must match boson_trap.dim
 
 
     def init(self, key):
@@ -130,7 +131,7 @@ class NQS:
         key_rbm, key_ffnn, key_dse=jax.random.split(key, 3)
 
         #We need to initialize the parameters of each neural network
-        dse=DSE(n_neurons=self.n_visible)
+        dse=DSE(n_neurons=self.n_visible, dim=self.dim)
         params_dse=dse.init(key_dse)
 
         rbm=RBM(n_visible=self.n_visible, n_hidden=self.n_hidden_rbm, init_scale=self.init_scale)
@@ -154,7 +155,7 @@ class NQS:
         """Apply the whole NQS to the input x, returning f (logarithm of the wave function)"""
 
         #We first need to apply the Deep Sets encoder to x, which gives us H_global
-        dse=DSE(n_neurons=self.n_visible)
+        dse=DSE(n_neurons=self.n_visible, dim=self.dim)
         H_global=dse.apply(params["params_dse"], x)
 
         #Now we apply the RBM to H_global 

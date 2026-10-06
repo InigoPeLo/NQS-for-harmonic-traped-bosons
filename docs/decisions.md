@@ -54,6 +54,7 @@ The network outputs `log|ψ| + iφ`, while θ is real.
 `(Re S + εI) δθ = −η Re F` is solved with `jnp.linalg.solve`.
 
 - With the defaults, `Ns = n_chains · n_samples = 256 · 8 = 2048 < p = 2273`. S has rank at most `Ns − 1`, so it is singular, and the shift `ε` (`varepsilon = 1e-3` in the config, class default `1e-4`) is required, not just a safeguard.
+- S and F are sliced from one joint covariance of `(O, E_L)`. Computing S separately would repeat the `O(Ns·p²)` product for no benefit.
 - **Trade-off:** forming S costs `O(Ns·p²)` and the solve costs `O(p³)`, both per iteration. This dominates the run time and grows with the cube of network width. Iterative (CG) or minSR (`Ns × Ns`) solvers would avoid it but are not implemented.
 
 ## Local energy via the full Hessian
@@ -61,7 +62,7 @@ The network outputs `log|ψ| + iφ`, while θ is real.
 The Laplacian is computed as `trace(jax.hessian(...))` over the `N·dim` coordinates, once for the real part and once for the imaginary part.
 
 - Simple and exact.
-- **Trade-off:** it builds a `(N·dim)²` matrix per sample. That is trivial for N = 4 (8 × 8) but quadratic in N. A diagonal-only or forward-over-reverse Laplacian would scale better for larger systems.
+- **Trade-off:** it builds a `(N·dim)²` matrix per sample. That is trivial for N = 4 (8 × 8 in 2D, 12 × 12 in 3D) but quadratic in N. A diagonal-only or forward-over-reverse Laplacian would scale better for larger systems.
 
 ## Sampler design
 
@@ -78,6 +79,8 @@ The Laplacian is computed as `trace(jax.hessian(...))` over the `N·dim` coordin
 ## Config-to-constructor mapping
 
 TOML sections are passed as `**kwargs` straight into the dataclasses. This removes glue code, and adding a field to a class makes it configurable immediately. The cost is that keys must match field names exactly: a typo raises `TypeError: unexpected keyword argument`.
+
+The one exception is `dim`. It is a field of both `boson_trap` and `NQS`, but it is only read from `[system]` and injected into the model with `NQS(**cfg["network"], dim=system.dim)`. Keeping a single source means the sampler, the Hamiltonian and the encoder can never disagree on the particle dimension.
 
 ## Not a package
 

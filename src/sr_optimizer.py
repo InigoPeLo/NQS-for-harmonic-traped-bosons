@@ -29,20 +29,22 @@ def compute_S_F(O, E_loc):
     #We can compute the S matrix and F vector using the log_derivatives O and the local energies E_loc
     #We can use the fact that the S matrix is the covariance matrix. jnp.cov conjugates the second
     #factor, so we have to conjugate again to get the correct covariance matrix
-    #S = <O* O> - <O*> <O>
-    S=jnp.conj(jnp.cov(O, rowvar=False, bias=True))
-    #F = <O* E_loc> - <O*> <E_loc> (it's the covariance between O and E_loc)
-    #E_loc[:, None] turns E_loc (Ns,) into a column (Ns, 1), so jnp.cov treats it as one more variable.
-    #A 1D array would be read as a row (1, Ns) and the shapes would not match
-    Cov_OE=jnp.conj(jnp.cov(O, E_loc[:, None], rowvar=False, bias=True))
 
+    #S = <O* O> - <O*> <O>
+    #F = <O* E_loc> - <O*> <E_loc> (it's the covariance between O and E_loc)
+
+    Cov_OE=jnp.conj(jnp.cov(O, E_loc[:, None], rowvar=False, bias=True))
     #Cov_OE is the (p+1, p+1) covariance matrix of the variables (O_1, ..., O_p, E_loc):
     #the top-left block [:-1, :-1] is S, the last column [:-1, -1] is Cov(O_k, E_loc) = F
     #and the corner [-1, -1] is Var(E_loc). We take the last column without the corner.
+    #E_loc[:, None] turns E_loc (Ns,) into a column (Ns, 1), so jnp.cov treats it as one more variable.
+    #A 1D array would be read as a row (1, Ns) and the shapes would not match
+    
     F=Cov_OE[:-1, -1]
 
-    #Maybe I could have used Cov_OE to get S
-
+    S=Cov_OE[:-1, :-1]
+    
+   
     return S, F
 @dataclass(frozen=True)
 class SR:

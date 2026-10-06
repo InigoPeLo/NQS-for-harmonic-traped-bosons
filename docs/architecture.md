@@ -13,7 +13,7 @@ Components never hold parameters or state. Parameters live in a pytree (and late
 
 ## Wavefunction ansatz
 
-A configuration is `X` of shape `(N, dim)` with `dim = 2`. The network returns $f_\theta(X) = \log\psi_\theta(X)$:
+A configuration is `X` of shape `(N, dim)`. `dim` is set once in `[system]` (default 2), and `train.py` passes `system.dim` to `NQS`, which forwards it to the encoder. The network returns $f_\theta(X) = \log\psi_\theta(X)$:
 
 ```
 x_i ──► Deep Sets encoder ──► H = Σ_i swish(W x_i + b)        (F-dim, permutation invariant)
@@ -40,7 +40,7 @@ p = F·(dim+1)  +  M·(F+1) + F  +  K·(F+2)  +  1
     encoder       RBM            FFNN         alpha_tilde
 ```
 
-The default `F = M = K = 32` gives `p = 2273`.
+The default `F = M = K = 32` gives `p = 2273` in 2D and `p = 2305` in 3D. Only the encoder weights depend on `dim`.
 
 At initialization `a = b = 0` and `W_RBM ~ init_scale·N(0,1)` with `init_scale = 0.01`, so the RBM is almost constant. The starting state is therefore close to a pure Gaussian with `α = 0.3`, a better starting point than random weights. The exact answer is `α = ω/2 = 0.5`.
 
@@ -69,7 +69,7 @@ With $O_k(X) = \partial_{\theta_k}\log\psi_\theta(X)$, computed per sample as `g
 
 $$S_{kl} = \langle O_k^* O_l\rangle - \langle O_k^*\rangle\langle O_l\rangle,\qquad F_k = \langle O_k^* E_L\rangle - \langle O_k^*\rangle\langle E_L\rangle$$
 
-Both come from `jnp.cov` (with `bias=True`). `F` is the last column of the joint covariance of `(O_1, …, O_p, E_L)`. Since θ is real, only the real parts are used:
+Both come from a single `jnp.cov` call (with `bias=True`) on the joint variables `(O_1, …, O_p, E_L)`. `S` is the top-left `p × p` block, and `F` is the last column without the `Var(E_L)` corner. The `O(Ns·p²)` product is formed once per iteration. Since θ is real, only the real parts are used:
 
 $$(\mathrm{Re}\,S + \varepsilon I)\,\delta\theta = -\eta\,\mathrm{Re}\,F,\qquad \theta \leftarrow \theta + \delta\theta$$
 
@@ -88,7 +88,7 @@ PRNGKey(seed) ─split─► key_params ─► NQS.init ─► params ─ravel_p
                                            ├ sample(n_samples sweeps)   walkers carried over
                                            ├ batch_local_energy         E_L (Ns,)
                                            └ SR.step                    θ_new, [E, Var]
-                                       ─► save_results ─► results/N{N}_{YYYYmmdd-HHMMSS}/
+                                       ─► save_results ─► results/N{N}_{YYYYmmdd-HHMMSS-ffffff}/
 ```
 
 - `log_psi(θ, x) = model.apply(unravel(θ), x)` is the single bridge between the pytree world (model) and the flat vector world (SR).
@@ -102,4 +102,4 @@ There is no database. Each run writes:
 - `results.npz` with `theta` and the per-iteration arrays `energy`, `variance`, `acceptance`, `alpha`
 - `config.toml`, a verbatim copy of the input config
 
-The config copy is needed to rebuild the same `NQS` (and so the same `unravel`) when reading `theta` back.
+The config copy is needed to rebuild the same `NQS` (and so the same `unravel`) when reading `theta` back. That includes `[system].dim`, which sets the shape of the encoder weights.

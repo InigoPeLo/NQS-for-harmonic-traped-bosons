@@ -12,7 +12,7 @@ uv run python train.py [--config PATH]
 |---|---|---|
 | `--config` | `config.toml` | TOML file with `[system]`, `[network]`, `[sampler]`, `[sr]`, `[training]` |
 
-**Output:** creates `{training.output_dir}/N{n_particles}_{YYYYmmdd-HHMMSS}/` containing `results.npz` and `config.toml`. `main()` also returns `(model, params)` when imported.
+**Output:** creates `{training.output_dir}/N{n_particles}_{YYYYmmdd-HHMMSS-ffffff}/` containing `results.npz` and `config.toml`. `main()` also returns `(model, params)` when imported.
 
 **Exit with error (`RuntimeError`)** if the thermalization drift is `|z| ≥ 3` or the acceptance is outside `[0.4, 0.6]`. See [usage.md](usage.md#common-errors).
 
@@ -56,13 +56,15 @@ All four classes have `init(key) -> params` (a dict pytree) and `apply(params, i
 | `DSE` | `n_neurons`, `dim=2` | `x (N, dim)` → `H (n_neurons,)`, `Σ_i swish(W x_i + b)` |
 | `RBM` | `n_visible`, `n_hidden`, `init_scale` | `H` → real scalar, `a·H + Σ log cosh(b + W H)` |
 | `FFNN` | `n_visible`, `n_hidden` | `H` → real scalar, `u · log cosh(V H + c)` |
-| `NQS` | `n_visible`, `n_hidden_rbm`, `n_hidden_ffnn`, `alpha`, `init_scale=0.01` | `x (N, dim)` → complex `log ψ` |
+| `NQS` | `n_visible`, `n_hidden_rbm`, `n_hidden_ffnn`, `alpha`, `init_scale=0.01`, `dim=2` | `x (N, dim)` → complex `log ψ` |
+
+`NQS.dim` must equal `boson_trap.dim`. `train.py` enforces this by building the model as `NQS(**cfg["network"], dim=system.dim)`, so `dim` must **not** appear in `[network]`. If it does, Python raises `TypeError: got multiple values for keyword argument 'dim'`.
 
 Structure of `NQS` params:
 
 ```python
 {
-  "params_dse":  {"W": (F, 2), "b": (F,)},
+  "params_dse":  {"W": (F, dim), "b": (F,)},
   "params_rbm":  {"W": (M, F), "b": (M,), "a": (F,)},
   "params_ffnn": {"V": (K, F), "u": (K,), "c": (K,)},
   "alpha_tilde": ()            # α = softplus(alpha_tilde)
@@ -104,7 +106,7 @@ samples, walkers, acc = sampler.sample(lambda x: model.apply(params, x), walkers
 |---|---|---|
 | `flatten_params` | `(params)` | `(theta (p,), unravel)` via `ravel_pytree` |
 | `log_derivatives` | `(theta, log_psi, samples)` | `O (Ns, p)` complex, `O_k = ∂_θk log ψ` |
-| `compute_S_F` | `(O, E_loc)` | `S (p, p)`, `F (p,)`, both complex covariances |
+| `compute_S_F` | `(O, E_loc)` | `S (p, p)`, `F (p,)`, both complex covariances, sliced from one joint covariance of `(O, E_loc)` |
 | `SR(learning_rate, varepsilon=1e-4)` | dataclass | — |
 | `SR.step` | `(theta, log_psi, samples, E_loc)` | `(theta_new, [mean(Re E_loc), Var(E_loc)])` |
 

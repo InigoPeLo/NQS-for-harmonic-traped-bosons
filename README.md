@@ -37,8 +37,8 @@ Iteration 1/150: E = 4.909703, Var(E) = 1.991309, acceptance = 0.56
 ...
 Final energy (mean of the last 15 iterations): E = 4.000001 +- 0.000011
 Exact energy: E_0 = 4.000000, relative error = 2.38e-07
-Final Var(E_loc) = 3.14e-05, alpha = 0.4865 (exact 0.5)
-Results saved in results/N4_20261006-121907
+Final Var(E_loc) = 3.14e-05, alpha = 0.4865
+Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
 ```
 
 ## Technologies used

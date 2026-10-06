@@ -35,11 +35,11 @@ def save_results(output_dir, config_path, n_particles, theta, history):
     """Save a training run in its own folder output_dir/N{n_particles}_{date-time}/ with:
     results.npz: the final theta (flat parameters) and the history of every iteration
     config.toml: a copy of the config used, needed to rebuild the same NQS and to know how the run was done
-    To rebuild the wavefunction: model = NQS(**cfg["network"]), _, unravel = flatten_params(model.init(key))
+    To rebuild the wavefunction: model = NQS(**cfg["network"], dim=system.dim), _, unravel = flatten_params(model.init(key))
     and params = unravel(data["theta"]). Returns the path of the folder."""
 
     #One folder per run, so we never overwrite previous results
-    run_dir = Path(output_dir) / f"N{n_particles}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    run_dir = Path(output_dir) / f"N{n_particles}_{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
     #jnp.savez stores several named arrays in one file, read them back with jnp.load(path)["energy"]
@@ -84,7 +84,7 @@ def main():
 
     #The keys of each section match the fields of its class, so we can unpack them directly with **
     system = boson_trap(**cfg["system"])
-    model = NQS(**cfg["network"])
+    model = NQS(**cfg["network"], dim=system.dim)  #The dimension of the particles must match the system
     sampler = MetroSampler(**cfg["sampler"])
     sr = SR(**cfg["sr"])
 
@@ -117,7 +117,7 @@ def main():
     thermalized, z=sampler.check_therm(sample_therm)
     print(f"Thermalization: z = {float(z):.2f}")
     if not thermalized:
-        raise RuntimeError(f"Chains have not thermalized: z = {float(z):.2f} > 3.0, rise n_thermalization in the config")
+        raise RuntimeError(f"Chains have not thermalized: z = {float(z):.2f} > 3.0, increase n_thermalization in the config")
 
     #The acceptance rate must be close to 50%: if it is too low the step is too large and almost every move
     #is rejected, if it is too high the step is too small and the chains barely move. Both give long autocorrelations
@@ -143,10 +143,10 @@ def main():
         energy_list.append(energy)
         variance_list.append(variance)
         acceptance_list.append(acceptance)
-        #alpha of the Gaussian envelope after this update, it should tend to 0.5
+        #alpha of the Gaussian envelope after this update
         alpha_list.append(jax.nn.softplus(unravel(theta)["alpha_tilde"]))
 
-        if n % 10==0:
+        if n % 10 == 0 or n == train_cfg["n_iter"] - 1:
             print(f"Iteration {n+1}/{train_cfg['n_iter']}: E = {float(energy):.6f}, Var(E) = {float(variance):.6f}, acceptance = {float(acceptance):.2f}")
 
     print(f"Training finished\n")
@@ -161,7 +161,7 @@ def main():
     
     print(f"Final energy (mean of the last {n_last} iterations): E = {E_final:.6f} +- {E_error:.6f}")
     print(f"Exact energy: E_0 = {system.exact_energy:.6f}, relative error = {abs(E_final - system.exact_energy) / system.exact_energy:.2e}")
-    print(f"Final Var(E_loc) = {float(variance_list[-1]):.2e}, alpha = {float(alpha_list[-1]):.4f} (exact 0.5)")
+    print(f"Final Var(E_loc) = {float(variance_list[-1]):.2e}, alpha = {float(alpha_list[-1]):.4f}")
 
     #Save theta, the history and a copy of the config to analyse the run later without training again
     history = {"energy": energy_list, "variance": variance_list, "acceptance": acceptance_list, "alpha": alpha_list}

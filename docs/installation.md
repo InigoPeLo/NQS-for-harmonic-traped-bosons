@@ -72,8 +72,8 @@ uv run python train.py --config config.toml
    Thermalization: acceptance = 0.57
    ...
    Exact energy: E_0 = 4.000000, relative error = 2.38e-07
-   Final Var(E_loc) = 3.14e-05, alpha = 0.4865 (exact 0.5)
-   Results saved in results/N4_YYYYmmdd-HHMMSS
+   Final Var(E_loc) = 3.14e-05, alpha = 0.4865
+   Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
    ```
 
 On an RTX 5070 Laptop GPU, 21 iterations take about 16 s including JIT compilation. The full 150-iteration default run scales from that.
