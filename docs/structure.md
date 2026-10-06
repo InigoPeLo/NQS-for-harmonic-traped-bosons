@@ -15,8 +15,7 @@ boson-trap/
 │   └── sr_optimizer.py   # Stochastic Reconfiguration
 ├── notebooks/
 │   └── analysis.ipynb    # post-processing of results/ (stored without outputs)
-├── notes/
-│   └── NQS_TrappedBosons.pdf   # theory: Hamiltonian, ansatz, VMC, SR derivations
+├── notes/                # git-ignored; local theory notes, not in the repository
 └── results/              # git-ignored; one subfolder per run
     └── N4_20261006-121907/      # current runs: N4_YYYYmmdd-HHMMSS-ffffff/
         ├── config.toml   # copy of the config used
@@ -56,7 +55,7 @@ The sections `[system]`, `[network]`, `[sampler]` and `[sr]` are unpacked with `
 Post-processing only. `analysis.ipynb` reads every run in the folders of `RESULTS_DIRS` (default `results/`), lets you filter which ones to analyse, and never trains. It finds the project root by walking up to `pyproject.toml` and adds it to `sys.path`, so it imports `src.*` like `train.py` does. It can rebuild and sample a trained wavefunction because each run stores its own `config.toml`. It depends on the dev group (`matplotlib`, `ipykernel`), never on code in `train.py`.
 
 ### `notes/`
-Reference material only, not read by the code. Comments in `src/nqs.py` cite its equations (eq. 58, eq. 64, section 6.2.1).
+Git-ignored: the author's theory notes are kept locally and are not distributed with the repository. Nothing in the code reads them. The equation numbers cited in comments in `src/nqs.py` (eq. 58, eq. 64, section 6.2.1) refer to these notes.
 
 ### `results/`
 Generated output, git-ignored. Folder names encode `N` and the timestamp at save time down to microseconds (`N{N}_{YYYYmmdd-HHMMSS-ffffff}`), so runs launched in parallel don't collide. The four existing runs predate the microsecond suffix and are named `N4_YYYYmmdd-HHMMSS`.

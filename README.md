@@ -19,7 +19,7 @@ Neural quantum state (Deep Sets + RBM + FFNN) for N bosons in a 2D harmonic trap
 - **What it does:** finds the ground state of N non-interacting bosons in an isotropic 2D harmonic trap,
   $H = -\tfrac12\sum_i \nabla_i^2 + \tfrac12\omega^2\sum_i |x_i|^2$ (units ħ = m = 1), by minimizing the variational energy of a neural network wavefunction $\psi_\theta(x_1,\dots,x_N)$.
 - **What problem it solves:** it is a testbed for a continuous-space NQS pipeline. The problem has an exact solution, $E_0 = N\,d\,\omega/2$ with $\psi_0 \propto e^{-\omega\sum_i|x_i|^2/2}$, so every part (the permutation-symmetric ansatz, the Metropolis sampler, the local energy with automatic derivatives, and SR) can be checked against a known answer.
-- **Real use case:** validating the method before adding harder physics, such as interactions, where no closed-form answer exists. The theory and derivations are in [notes/NQS_TrappedBosons.pdf](notes/NQS_TrappedBosons.pdf).
+- **Real use case:** validating the method before adding harder physics, such as interactions, where no closed-form answer exists.
 
 ## Quick start
 
@@ -93,7 +93,6 @@ boson-trap/
 │   └── sr_optimizer.py # log-derivatives, S and F, SR update
 ├── notebooks/
 │   └── analysis.ipynb # compares runs, checks ψ against the exact state, fixed-θ energy
-├── notes/            # theory notes (PDF)
 └── results/          # one folder per run (git-ignored)
 ```
 

@@ -4,7 +4,7 @@
 
 The model, sampler and optimizer are hand-written as frozen dataclasses over raw `jax.numpy`. The only declared dependency is `jax[cuda12]`, and the code imports nothing else outside the standard library. Results are written with `jnp.savez`, which is NumPy's `savez` re-exported by JAX. NumPy is still installed, but only as a required dependency of JAX.
 
-- **Why:** every equation in the notes maps to a few visible lines (S, F, local energy, the Metropolis criterion), which suits a project whose goal is to validate the method against an exact answer.
+- **Why:** every equation of the method maps to a few visible lines (S, F, local energy, the Metropolis criterion), which suits a project whose goal is to validate the method against an exact answer.
 - **Trade-off:** no built-in samplers with adaptive steps, no `MCState` error estimates with autocorrelation times, and no iterative SR solvers, so these are either missing or implemented by hand (see below).
 
 ## Frozen dataclasses + explicit parameter pytrees
@@ -26,7 +26,7 @@ Each component is `@dataclass(frozen=True)`, and `init(key)` *returns* a paramet
 
 Sum pooling over a shared per-particle encoder makes ψ exactly symmetric.
 
-- **Rejected-by-design alternative** (stated in the notes): an unconstrained ansatz. The Hamiltonian does not enforce particle statistics, so an unconstrained network could drift into states of the wrong symmetry.
+- **Rejected-by-design alternative:** an unconstrained ansatz. The Hamiltonian does not enforce particle statistics, so an unconstrained network could drift into states of the wrong symmetry.
 - **Trade-off:** a single swish layer with sum pooling limits expressivity. That is enough here because the exact ground state is a product of Gaussians, but it is the first thing to grow when interactions are added.
 
 ## Gaussian envelope with `α = softplus(α̃)`

@@ -28,7 +28,7 @@ x_i ──► Deep Sets encoder ──► H = Σ_i swish(W x_i + b)        (F-di
                     └──────────► f = log|ψ| + i φ
 ```
 
-- **Deep Sets encoder (`DSE`):** the same single-layer map is applied to every particle and the results are **summed**. Any permutation of particles gives the same `H`, so ψ is bosonic by construction (eq. 2 in the notes) and needs no explicit symmetrization.
+- **Deep Sets encoder (`DSE`):** the same single-layer map is applied to every particle and the results are **summed**. Any permutation of particles gives the same `H`, so ψ is bosonic by construction and needs no explicit symmetrization.
 - **RBM:** the log of an RBM with its hidden units traced out, applied to the continuous latent vector `H`. `log cosh` is computed as `logaddexp(θ, −θ)`, dropping the constant `−log 2`, to avoid overflow.
 - **Gaussian envelope:** the RBM and swish grow at most linearly in |x|, so the factor `−α Σ|x_i|²` is what makes ψ decay. α is stored as `alpha_tilde` with `α = softplus(alpha_tilde)`, so SR can never make it negative.
 - **FFNN phase:** one hidden layer with `log cosh` activation. The exact ground state is real and positive, so the phase should learn to be constant.
