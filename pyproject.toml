@@ -1,19 +1,18 @@
 [project]
 name = "boson-trap"
 version = "0.1.0"
-description = "Add your description here"
+description = "Neural quantum state (Deep Sets + RBM + FFNN) for N bosons in a 2D harmonic trap, trained with VMC and stochastic reconfiguration"
 readme = "README.md"
 authors = [
     { name = "InigoPeLo", email = "206222521+InigoPeLo@users.noreply.github.com" }
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "jax[cuda12]>=0.11.2",
     "netket>=3.22.4",
 ]
 
-[project.scripts]
-boson-trap = "boson_trap:main"
-
-[build-system]
-requires = ["uv_build>=0.12.17,<0.13.0"]
-build-backend = "uv_build"
+# The code is run as scripts from the project root (python train.py), not installed as a package:
+# uv only manages the environment and the dependencies. Modules are imported as src.nqs, src.sampler...
+[tool.uv]
+package = false

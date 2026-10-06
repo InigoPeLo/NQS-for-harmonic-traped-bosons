@@ -28,3 +28,4 @@ n_samples = 8           # recorded samples per chain and iteration (Ns = n_chain
 n_thermalization = 100  # sweeps discarded before training
 n_iter = 150            # number of SR iterations
 seed = 0                # seed of the random number generator
+output_dir = "results"  # every run is saved in its own folder results/N{N}_{date-time}/
