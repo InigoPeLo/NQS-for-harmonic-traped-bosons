@@ -50,8 +50,7 @@ Results saved in results/N4_20261006-121907
 | Hardware | NVIDIA GPU with CUDA 12 | Runs on the GPU when one is available, otherwise on the CPU |
 | Environment | uv | Manages the environment and dependencies. The project is not installed as a package |
 | Config | TOML | One section per component, unpacked straight into its constructor |
-| Output | NumPy `.npz` | Final parameters and per-iteration history |
-| Declared, unused | NetKet ≥ 3.22.4 | Listed in `pyproject.toml` but never imported |
+| Output | `.npz` via `jnp.savez` | Final parameters and per-iteration history |
 
 ## Quick installation
 

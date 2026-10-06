@@ -5,8 +5,8 @@ boson-trap/
 ├── train.py              # entry point (CLI)
 ├── config.toml           # run parameters
 ├── pyproject.toml        # metadata + dependencies; uv in non-package mode
-├── .python-version       # 3.14 (git-ignored)
-├── uv.lock               # (git-ignored)
+├── .python-version       # 3.14; uv picks this interpreter
+├── uv.lock               # exact resolved versions (jax/jaxlib 0.11.2, numpy 2.5.3, CUDA wheels)
 ├── src/
 │   ├── __init__.py       # empty; makes `src` importable as a package
 │   ├── boson_trap.py     # physical system

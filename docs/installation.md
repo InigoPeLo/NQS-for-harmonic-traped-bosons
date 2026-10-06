@@ -26,12 +26,12 @@ cd NQS-for-harmonic-traped-bosons
 uv sync
 ```
 
-This creates `.venv/` with `jax[cuda12]` and `netket`. `pyproject.toml` sets `[tool.uv] package = false`, so the project itself is **not** installed. Modules are imported as `src.nqs`, `src.sampler`, … which only works when commands run from the project root.
+This creates `.venv/` with `jax[cuda12]`, its CUDA 12 wheels and NumPy. `pyproject.toml` sets `[tool.uv] package = false`, so the project itself is **not** installed. Modules are imported as `src.nqs`, `src.sampler`, … which only works when commands run from the project root.
 
-`uv.lock` and `.python-version` are git-ignored, so a fresh clone resolves the dependencies again from `pyproject.toml`. To pin the interpreter locally:
+`uv.lock` and `.python-version` are committed. A fresh clone gets the same interpreter (3.14) and the exact package versions, including `jax`/`jaxlib` 0.11.2. To fail instead of silently re-resolving when the lockfile and `pyproject.toml` disagree:
 
 ```bash
-uv python pin 3.14
+uv sync --locked
 ```
 
 ### 3. Environment variables
@@ -85,4 +85,4 @@ On an RTX 5070 Laptop GPU, 21 iterations take about 16 s including JIT compilati
 | `E... cuda_executor.cc ... CUDA_ERROR_OUT_OF_MEMORY` at startup, but training continues | JAX's default preallocation fails, then it retries with smaller blocks | Harmless. Silence it with `XLA_PYTHON_CLIENT_PREALLOCATE=false` |
 | `ModuleNotFoundError: No module named 'src'` | Script run from outside the project root | `cd` to the root, then `uv run python train.py` |
 | `FileNotFoundError: config.toml` | Same: the default `--config` is relative to the current directory | Run from the root or pass an absolute `--config` path |
-| uv refuses to resolve / "requires-python" error | Python < 3.14 selected | `uv python install 3.14 && uv python pin 3.14` |
+| uv refuses to resolve / "requires-python" error | Python < 3.14 selected (e.g. `.python-version` overridden by `UV_PYTHON`) | `uv python install 3.14`, and unset `UV_PYTHON` if it is set |

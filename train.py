@@ -12,7 +12,7 @@ import tomllib
 import shutil
 from datetime import datetime
 from pathlib import Path
-import numpy as np
+
 
 
 def load_config():
@@ -42,9 +42,9 @@ def save_results(output_dir, config_path, n_particles, theta, history):
     run_dir = Path(output_dir) / f"N{n_particles}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    #np.savez stores several named arrays in one file, read them back with np.load(path)["energy"]
-    np.savez(run_dir / "results.npz", theta=np.asarray(theta),
-             **{name: np.asarray(values) for name, values in history.items()})
+    #jnp.savez stores several named arrays in one file, read them back with jnp.load(path)["energy"]
+    jnp.savez(run_dir / "results.npz", theta=jnp.asarray(theta),
+             **{name: jnp.asarray(values) for name, values in history.items()})
 
     shutil.copy(config_path, run_dir / "config.toml")
 

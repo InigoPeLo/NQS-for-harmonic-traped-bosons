@@ -2,7 +2,7 @@
 
 ## Plain JAX instead of a framework (NetKet / Flax)
 
-The model, sampler and optimizer are hand-written as frozen dataclasses over raw `jax.numpy`. `netket` is listed in `pyproject.toml` but never imported.
+The model, sampler and optimizer are hand-written as frozen dataclasses over raw `jax.numpy`. The only declared dependency is `jax[cuda12]`, and the code imports nothing else outside the standard library. Results are written with `jnp.savez`, which is NumPy's `savez` re-exported by JAX. NumPy is still installed, but only as a required dependency of JAX.
 
 - **Why:** every equation in the notes maps to a few visible lines (S, F, local energy, the Metropolis criterion), which suits a project whose goal is to validate the method against an exact answer.
 - **Trade-off:** no built-in samplers with adaptive steps, no `MCState` error estimates with autocorrelation times, and no iterative SR solvers, so these are either missing or implemented by hand (see below).

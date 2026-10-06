@@ -71,14 +71,14 @@ Network size controls the cost: `p = 3F + M(F+1) + F + K(F+2) + 1` parameters, a
 `train.py` saves θ flat. To rebuild the parameter pytree, use the run's own config:
 
 ```python
-import tomllib, numpy as np, jax, jax.numpy as jnp
+import tomllib, jax, jax.numpy as jnp
 from src.nqs import NQS
 from src.sr_optimizer import flatten_params
 
 run = "results/N4_20261006-121907"
 with open(f"{run}/config.toml", "rb") as f:
     cfg = tomllib.load(f)
-data = np.load(f"{run}/results.npz")
+data = jnp.load(f"{run}/results.npz")
 
 model = NQS(**cfg["network"])
 _, unravel = flatten_params(model.init(jax.random.PRNGKey(0)))  # any key: only the structure is used
@@ -94,14 +94,16 @@ Run it with `uv run python your_script.py` from the root.
 ## 4. Analyse the training history
 
 ```python
-import numpy as np
-d = np.load("results/N4_20261006-121907/results.npz")
+import jax.numpy as jnp
+d = jnp.load("results/N4_20261006-121907/results.npz")
 d.files            # ['theta', 'energy', 'variance', 'acceptance', 'alpha']
 d["energy"]        # (n_iter,) mean E_loc per iteration
 d["variance"]      # (n_iter,) Var(E_loc) per iteration
 d["acceptance"]    # (n_iter,) mean Metropolis acceptance per iteration
 d["alpha"]         # (n_iter,) α after each update
 ```
+
+For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and each entry is a float32 NumPy array. `np.load` gives the same result, and runs saved before the switch to `jnp.savez` load identically. Wrap an entry in `jnp.asarray` to put it on the JAX device.
 
 `variance` going to 0 is the cleanest convergence signal. For an exact eigenstate `E_loc` is constant, so `Var(E_loc) = 0` regardless of sampling noise.
 
