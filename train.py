@@ -1,4 +1,7 @@
 """Main script to train the NQS model to solve the boson trap problem using Stochastic Reconfiguration (SR) optimization."""
+import os
+
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import jax
 import jax.numpy as jnp
