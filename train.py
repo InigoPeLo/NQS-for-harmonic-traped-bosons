@@ -9,7 +9,8 @@ import jax.numpy as jnp
 from src.nqs import NQS
 from src.sr_optimizer import SR, flatten_params
 from src.boson_trap import boson_trap
-from src.sampler import MetroSampler
+from src.sampler_m import MetroSampler
+from src.sampler_g import GibbsSampler
 import argparse
 import tomllib
 import shutil
@@ -34,15 +35,24 @@ def load_config():
     return cfg, args.config
 
 
-def save_results(output_dir, config_path, n_particles, theta, history):
-    """Save a training run in its own folder output_dir/N{n_particles}_{date-time}/ with:
+#Tag added at the end of the run folder name to know which sampler was used
+SAMPLER_TAGS = {"metropolis": "m", "gibbs": "g"}
+
+#Desired range of the final acceptance rate: outside it, train.py prints a warning at the end of the run
+ACC_MIN, ACC_MAX = 0.25, 0.4
+
+
+def save_results(output_dir, config_path, n_particles, sampler_type, theta, history):
+    """Save a training run in its own folder output_dir/N{n_particles}_{date-time}_{m|g}/ with:
     results.npz: the final theta (flat parameters) and the history of every iteration
     config.toml: a copy of the config used, needed to rebuild the same NQS and to know how the run was done
     To rebuild the wavefunction: model = NQS(**cfg["network"], dim=system.dim), _, unravel = flatten_params(model.init(key))
     and params = unravel(data["theta"]). Returns the path of the folder."""
 
-    #One folder per run, so we never overwrite previous results
-    run_dir = Path(output_dir) / f"N{n_particles}_{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+    #One folder per run, so we never overwrite previous results. The sampler tag goes at the end, so the
+    #folders still sort by date: _m for Metropolis, _g for Gibbs
+    run_dir = Path(output_dir) / (f"N{n_particles}_{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+                                  f"_{SAMPLER_TAGS[sampler_type]}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     #jnp.savez stores several named arrays in one file, read them back with jnp.load(path)["energy"]
@@ -54,9 +64,10 @@ def save_results(output_dir, config_path, n_particles, theta, history):
     return run_dir
 
 
-def make_train_step(log_psi, sampler, system, sr, n_samples):
+def make_train_step(log_psi, sample_fn, system, sr, n_samples):
     """Build the jitted SR iteration for a given model, sampler, system and optimizer.
-    log_psi, sampler, system, sr and n_samples are taken from this enclosing function, so jax.jit
+    sample_fn(theta, walkers, n_samples, key) hides which sampler is used (see main).
+    log_psi, sample_fn, system, sr and n_samples are taken from this enclosing function, so jax.jit
     treats them as constants and train_step only receives what changes every iteration."""
 
     @jax.jit
@@ -68,7 +79,7 @@ def make_train_step(log_psi, sampler, system, sr, n_samples):
         log_psi_x = lambda x: log_psi(theta, x)
 
         #The walkers start from where the previous iteration left them, so they are almost thermalized
-        samples, walkers, acceptance = sampler.sample(log_psi_x, walkers, n_samples, key)
+        samples, walkers, acceptance = sample_fn(theta, walkers, n_samples, key)
 
         #Local energy of every sample. It only evaluates psi, so it takes log_psi_x
         E_loc = system.batch_local_energy(log_psi_x, samples)
@@ -93,7 +104,10 @@ def main():
     #The keys of each section match the fields of its class, so we can unpack them directly with **
     system = boson_trap(**cfg["system"])
     model = NQS(**cfg["network"], dim=system.dim)  #The dimension of the particles must match the system
-    sampler = MetroSampler(**cfg["sampler"])
+    #The sampler is chosen in the config, and each one reads its own subsection
+    samplers = {"metropolis": MetroSampler, "gibbs": GibbsSampler}
+    sampler_type = cfg["sampler"]["type"]
+    sampler = samplers[sampler_type](**cfg["sampler"][sampler_type])
     sr = SR(**cfg["sr"])
 
     #The training parameters are not fields of any class, we read them one by one
@@ -113,13 +127,16 @@ def main():
     #We build the log_psi function that takes theta and x as arguments, and returns log(psi(theta, x))
     log_psi = lambda t, x: model.apply(unravel(t), x)    
 
-    #We need to termalize the walkers before starting the training,
-    #we do n_termalization sweeps and discard the results
+    #Both samplers sample |psi|^2, but Metropolis needs log_psi(x) and Gibbs needs the parameters dictionary.
+    #sample_fn gives both the same signature, so the rest of the script does not depend on the sampler
+    if sampler_type == "gibbs":
+        sample_fn = lambda t, w, n, k: sampler.sample(unravel(t), w, n, k)
+    else:
+        sample_fn = lambda t, w, n, k: sampler.sample(lambda x: log_psi(t, x), w, n, k)
 
-    #We evaluate log_psi for the initial walkers to get the starting log_prob
-    log_psi_x = lambda x: log_psi(theta, x)
-
-    sample_therm, walkers, accepts_mean =sampler.sample(log_psi_x, walkers, train_cfg["n_thermalization"], key_therm)
+    #We need to thermalize the walkers before starting the training,
+    #we do n_thermalization sweeps and discard the results
+    sample_therm, walkers, accepts_mean = sample_fn(theta, walkers, train_cfg["n_thermalization"], key_therm)
 
     #We check if the chains have thermalized, and raise an error if not.
     thermalized, z=sampler.check_therm(sample_therm)
@@ -131,7 +148,7 @@ def main():
 
     #Now we can make the trainig loop
 
-    train_step = make_train_step(log_psi, sampler, system, sr, train_cfg["n_samples"])
+    train_step = make_train_step(log_psi, sample_fn, system, sr, train_cfg["n_samples"])
 
     #Empty lists of ebergy, variance and acceptance to store the results of every iteration
     energy_list = []
@@ -172,21 +189,19 @@ def main():
     n_acc = min(20, len(acceptance_list))
     acc_final = float(jnp.mean(jnp.array(acceptance_list[-n_acc:])))
     print(f"Final acceptance (mean of the last {n_acc} iterations) = {acc_final:.2f}")
-    if acc_final < 0.4:
-        print(f"Warning: final acceptance {acc_final:.2f} below 0.4, decrease step_size in the config for the next run")
-    elif acc_final > 0.6:
-        print(f"Warning: final acceptance {acc_final:.2f} above 0.6, increase step_size in the config for the next run")
+    if acc_final < ACC_MIN:
+        print(f"Warning: final acceptance {acc_final:.2f} below {ACC_MIN}, decrease step_size in the config for the next run")
+    elif acc_final > ACC_MAX:
+        print(f"Warning: final acceptance {acc_final:.2f} above {ACC_MAX}, increase step_size in the config for the next run")
 
     #Save theta, the history and a copy of the config to analyse the run later without training again
     history = {"energy": energy_list, "variance": variance_list, "acceptance": acceptance_list,
                "alpha": alpha_list, "phase_std": phase_std_list}
-    run_dir = save_results(train_cfg["output_dir"], config_path, system.n_particles, theta, history)
+    run_dir = save_results(train_cfg["output_dir"], config_path, system.n_particles, sampler_type, theta, history)
     print(f"Results saved in {run_dir}")
 
     #The trained wavefunction is the model (architecture) together with its parameters
     return model, unravel(theta)
-
-
 
 
 if __name__ == "__main__":

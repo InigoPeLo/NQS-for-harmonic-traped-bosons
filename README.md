@@ -9,7 +9,7 @@ Neural quantum state (Deep Sets + RBM + FFNN) for N bosons in a 2D harmonic trap
 | [📁 Structure](docs/structure.md) | Project organization and responsibilities |
 | [🚀 Installation](docs/installation.md) | Requirements and steps to run the project |
 | [🧠 Technical decisions](docs/decisions.md) | Trade-offs and design justifications |
-| [📖 Usage guide](docs/usage.md) | Running training, reading results, analysis notebook, tuning, common errors |
+| [📖 Usage guide](docs/usage.md) | Running training, choosing the sampler, reading results, analysis notebook, tuning, common errors |
 | [🔌 API](docs/api.md) | CLI and Python interface of the `src` modules |
 
 ---
@@ -18,7 +18,7 @@ Neural quantum state (Deep Sets + RBM + FFNN) for N bosons in a 2D harmonic trap
 
 - **What it does:** finds the ground state of N non-interacting bosons in an isotropic 2D harmonic trap,
   $H = -\tfrac12\sum_i \nabla_i^2 + \tfrac12\omega^2\sum_i |x_i|^2$ (units ħ = m = 1), by minimizing the variational energy of a neural network wavefunction $\psi_\theta(x_1,\dots,x_N)$.
-- **What problem it solves:** it is a testbed for a continuous-space NQS pipeline. The problem has an exact solution, $E_0 = N\,d\,\omega/2$ with $\psi_0 \propto e^{-\omega\sum_i|x_i|^2/2}$, so every part (the permutation-symmetric ansatz, the Metropolis sampler, the local energy with automatic derivatives, and SR) can be checked against a known answer.
+- **What problem it solves:** it is a testbed for a continuous-space NQS pipeline. The problem has an exact solution, $E_0 = N\,d\,\omega/2$ with $\psi_0 \propto e^{-\omega\sum_i|x_i|^2/2}$, so every part (the permutation-symmetric ansatz, the two samplers (Metropolis and block Gibbs), the local energy with automatic derivatives, and SR) can be checked against a known answer.
 - **Real use case:** validating the method before adding harder physics, such as interactions, where no closed-form answer exists.
 
 ## Quick start
@@ -28,7 +28,7 @@ uv sync
 uv run python train.py --config config.toml
 ```
 
-With the shipped `config.toml` (N = 4, 150 SR iterations), the energy converges to the exact value `E_0 = 4`:
+The shipped `config.toml` is set to N = 20 (400 SR iterations). With the N = 4 reference settings listed in [docs/usage.md](docs/usage.md#parameters) (150 SR iterations), the energy converges to the exact value `E_0 = 4`:
 
 ```
 Thermalization: z = 0.84
@@ -38,7 +38,7 @@ Final energy (mean of the last 15 iterations): E = 4.000001 +- 0.000011
 Exact energy: E_0 = 4.000000, relative error = 2.38e-07
 Final Var(E_loc) = 3.14e-05, alpha = 0.4865
 Final acceptance (mean of the last 20 iterations) = 0.45
-Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
+Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff_m
 ```
 
 Larger systems need a different SR shift and learning rate. For N = 40, see [docs/usage.md](docs/usage.md#example-n--40).
@@ -49,6 +49,7 @@ Larger systems need a different SR shift and learning rate. For N = 40, see [doc
 |---|---|---|
 | Language | Python ≥ 3.14 | Uses `tomllib` and frozen dataclasses |
 | Numerics / autodiff | JAX (`jax[cuda12]` ≥ 0.11.2) | `jit`, `vmap`, `lax.scan`, `grad`, `hessian`, `ravel_pytree` |
+| Sampling | Metropolis or block Gibbs, both hand-written | Selected per run in `config.toml` |
 | Hardware | NVIDIA GPU with CUDA 12 | Runs on the GPU when one is available, otherwise on the CPU |
 | Environment | uv | Manages the environment and dependencies. The project is not installed as a package |
 | Config | TOML | One section per component, unpacked straight into its constructor |
@@ -69,10 +70,10 @@ Full details and troubleshooting: [docs/installation.md](docs/installation.md).
 
 - the Hamiltonian (`boson_trap`)
 - the wavefunction (`NQS`)
-- the Metropolis sampler (`MetroSampler`)
+- the sampler, chosen with `[sampler] type`: random-walk Metropolis (`MetroSampler`) or block Gibbs over the RBM hidden units (`GibbsSampler`)
 - the optimizer (`SR`)
 
-The NQS maps each particle through a shared Deep Sets encoder and sums the results, so ψ is symmetric under particle exchange by construction. An RBM gives log|ψ|, a Gaussian envelope keeps ψ normalizable, and an FFNN gives the phase. Each SR iteration does three things, all inside one `jax.jit`-compiled step:
+The NQS maps each particle through a shared Deep Sets encoder and sums the results, so ψ is symmetric under particle exchange by construction. An RBM models the probability density |ψ|² (so log|ψ| is half its output), a Gaussian envelope keeps ψ normalizable, and an FFNN gives the phase. Because |ψ|² is exactly the marginal of a one-hidden-layer RBM, it can also be sampled by Gibbs: given the hidden units, the particles are independent. Each SR iteration does three things, all inside one `jax.jit`-compiled step:
 
 1. sample configurations from |ψ|²
 2. compute local energies with automatic derivatives
@@ -89,7 +90,8 @@ boson-trap/
 ├── src/
 │   ├── boson_trap.py # Hamiltonian, local energy, exact energy
 │   ├── nqs.py        # Deep Sets encoder + RBM + FFNN + Gaussian envelope
-│   ├── sampler.py    # Metropolis sampler and thermalization check
+│   ├── sampler_m.py  # Metropolis sampler and thermalization check
+│   ├── sampler_g.py  # block Gibbs sampler (hidden units, then one particle at a time)
 │   └── sr_optimizer.py # log-derivatives, S and F, SR update
 ├── notebooks/
 │   └── analysis.ipynb # compares runs, checks ψ against the exact state, fixed-θ energy

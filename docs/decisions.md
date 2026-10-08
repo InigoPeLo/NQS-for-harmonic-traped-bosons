@@ -35,6 +35,16 @@ Sum pooling over a shared per-particle encoder makes ψ exactly symmetric.
 - SR is unconstrained and could push α below 0. The walkers would then drift to infinity. Reparametrizing through softplus guarantees α > 0, and the initial value is set by inverting softplus (`log(expm1(α))`).
 - Starting from `α = 0.3` with RBM weights at scale `0.01` puts the initial state near a Gaussian, which makes thermalization and the first SR steps well behaved.
 
+## The RBM models |ψ|², not |ψ|
+
+The RBM output is `log|ψ|²` without the envelope, and `NQS.apply` returns `log|ψ| = ½·RBM − α Σ|x_i|²`.
+
+- **Why:** with the hidden units traced out, `Σ_h exp(a·H + h·θ) ∝ exp(a·H + Σ log cosh θ)`. This makes the sampled distribution |ψ|² exactly the marginal of an RBM with **one** hidden layer, which is what `GibbsSampler` (alternating `p(h|x)` and `p(x|h)`) relies on. If the RBM modelled |ψ|, squaring it would need two copies of the hidden layer.
+- **Only `NQS.apply` changes:** the model still returns `log ψ`. The Metropolis sampler (`2·Δ Re f` is `Δ log|ψ|²`), the local energy and SR are all written for `log ψ`, so none of them changes. Returning `log|ψ|²` instead would have spread factors of ½ and 2 across the sampler, the Laplacian, the log-derivatives and the phase.
+- **Envelope kept in ψ:** α keeps its meaning (exact value `ω/2`) and its initial value in the config. In |ψ|² the envelope is `−2α Σ|x_i|²`.
+- **Trade-off:** at a fixed number of hidden units M, `½ log cosh θ` and `log cosh θ` are not the same family of functions, though both are quadratic near 0 and linear far from it. An RBM over |ψ|² with 2M units contains the old |ψ| RBM with M units (pairs of tied units). The ½ also halves the RBM gradients, which changes how the absolute shift `ε` compares to S.
+- **Compatibility:** a `theta` saved with the |ψ| RBM has the same shape but describes a different ψ under the current code. The saved config does not say which version produced a run.
+
 ## Complex log ψ with real parameters
 
 The network outputs `log|ψ| + iφ`, while θ is real.
@@ -53,7 +63,7 @@ The network outputs `log|ψ| + iφ`, while θ is real.
 
 `(Re S + εI) δθ = −η Re F` is solved with `jnp.linalg.solve`.
 
-- With the defaults, `Ns = n_chains · n_samples = 256 · 8 = 2048 < p = 2273`. S has rank at most `Ns − 1`, so it is singular, and the shift `ε` (`varepsilon = 1e-3` for N = 4, class default `1e-4`) is required, not just a safeguard.
+- With the N = 4 settings, `Ns = n_chains · n_samples = 256 · 8 = 2048 < p = 2273`. S has rank at most `Ns − 1`, so it is singular, and the shift `ε` (`varepsilon = 1e-3` for N = 4, class default `1e-4`) is required, not just a safeguard.
 - **ε is absolute, so it has to grow with N.** Sum pooling makes `H`, and with it every `O_k`, grow with N, so the scale of S grows roughly as N². The largest eigenvalue of `Re S` is 28 at N = 4 and 1.7·10⁵ at N = 40. There, `ε = 1e-3` no longer regularizes anything. `S + εI` has a condition number of ~10⁸, which is beyond float32's ~7 digits, and the update direction becomes noise:
   - the energy *rises* even with a small η;
   - after 2–3 steps the walkers fall behind ψ, `E_loc` goes below `E_0`, and the run turns NaN.
@@ -71,14 +81,32 @@ The Laplacian is computed as `trace(jax.hessian(...))` over the `N·dim` coordin
 
 ## Sampler design
 
-- **All-particle moves:** one Gaussian proposal moves every particle of a chain. It is simple and fully vectorized, but the acceptance rate drops as N grows at a fixed `step_size`.
+- **All-particle moves (Metropolis):** one Gaussian proposal moves every particle of a chain. It is simple and fully vectorized, but the acceptance rate drops as N grows at a fixed `step_size`. `GibbsSampler` moves one particle at a time instead (see below).
 - **Thinning:** only the last configuration of each `n_sweep`-step sweep is recorded, which trades compute for less correlated samples.
 - **Walkers persist across iterations:** θ changes little per step, so the chains stay nearly in equilibrium and need no re-thermalization.
-- **Fixed step size, final acceptance warning:** `step_size` is never adapted. After training, `train.py` prints the mean acceptance of the last 20 iterations and a `Warning:` if it is outside `[0.4, 0.6]`.
+- **Fixed step size, final acceptance warning:** `step_size` is never adapted. After training, `train.py` prints the mean acceptance of the last 20 iterations and a `Warning:` if it is outside `[ACC_MIN, ACC_MAX] = [0.25, 0.4]`. The band was lowered from `[0.4, 0.6]`: for random-walk moves in many dimensions the optimal acceptance is below 50% (it tends to ~0.23 as the dimension grows).
   - **Why not check after thermalization:** that check used to abort the run, but it was removed. The acceptance always *drops* during training, because ψ narrows as α grows (`|ψ|²` has width `1/(2√α)`), and it only settles once ψ has converged: 0.56 → 0.45 at N = 4, 0.51 → 0.34 at N = 40. A check at the start measures the initial ψ, not the one that matters, and its upper bound prevented choosing a step suited to the final ψ.
   - **Why not stop at a plateau:** a "plateau" detected from the acceptance alone gave false positives on slowly converging runs.
   - **Why a warning and not an error:** a low acceptance does not bias the energy, it only makes the samples more correlated. The N = 40 run converged to `E = 40.07` with an acceptance of 0.34.
-- **Thermalization check:** `check_therm` compares the mean of `Σ|x_i|²` between the third and fourth quarters of the thermalization samples. Chains are independent, so the spread of per-chain drifts gives a standard error, and the run aborts if the drift exceeds 3σ. With fewer than 4 samples per chain the quarters would be empty and `z` would be NaN, so `check_therm` raises a `ValueError` with an explicit message instead.
+- **Thermalization check:** shared by both samplers (`check_therm` is identical in `sampler_m.py` and `sampler_g.py`). It compares the mean of `Σ|x_i|²` between the third and fourth quarters of the thermalization samples. Chains are independent, so the spread of per-chain drifts gives a standard error, and the run aborts if the drift exceeds 3σ. With fewer than 4 samples per chain the quarters would be empty and `z` would be NaN, so `check_therm` raises a `ValueError` with an explicit message instead.
+
+## Block Gibbs sampler as an alternative to Metropolis
+
+`GibbsSampler` exploits two properties of the ansatz: the RBM over |ψ|² has one hidden layer, and the Deep Sets encoder is a sum over particles. Given the hidden units, `p(x | h)` factorizes into N identical one-body densities, so every particle is moved and accepted **on its own**.
+
+- **Why:** with all-particle Metropolis moves, the proposal is `N·dim`-dimensional and `step_size` must shrink as N grows to keep the acceptance (0.4 at N = 4, 0.14 at N = 20, 0.15 with acceptance 0.34 at N = 40). Per-particle moves keep a fixed step meaningful at any N. The correlations between particles are carried by the exact `h | x` step instead of by small collective moves.
+- **Metropolis inside Gibbs:** the one-body density `p_1(y | c)` has no closed-form sampler, so each Gibbs step makes `n_metro` random-walk moves that leave it invariant. The `h | x` step is exact.
+- **Validation:** with the same parameters, Gibbs and Metropolis agree on `<Σ|x_i|²>` within error bars, also for RBM weights large enough to push the distribution far from the Gaussian envelope. Trained at N = 20 for 100 iterations with the shipped settings, both reach the same energy (`20.089` Gibbs, `20.096` Metropolis) in the same time (~19 s), since the local energy dominates the cost at that size.
+- **Trade-off:** Gibbs is not ansatz-agnostic. It takes the parameter dict and re-implements |ψ|² from its pieces (`hidden_sample`, `log_p1`), so it duplicates the formula of `NQS.apply` and must be kept in sync with it by hand. A mismatch is not an error: it silently samples the wrong distribution. Metropolis only needs `log_psi(x)` and stays as the general option.
+- **Acceptance is per particle,** so it is not directly comparable with the Metropolis one. The final acceptance warning of `train.py` uses the same `[0.25, 0.4]` band for both samplers; with Gibbs and `step_size = 0.5` the acceptance ends around 0.67 at N = 20 and triggers the "above 0.4" warning.
+
+### `sample_fn`: one call signature for both samplers
+
+`MetroSampler.sample` takes `log_psi(x)`, `GibbsSampler.sample` takes `params`. Instead of branching wherever sampling happens, `main()` builds `sample_fn(θ, walkers, n, key)` once, and thermalization and `train_step` only call it. Both samplers return the same `(samples, walkers, acceptance)` layout, so nothing downstream changes.
+
+### Sampler settings in subsections
+
+`[sampler]` only holds `type`, and each sampler reads its own subsection. `step_size` means different things in each (an `N·dim`-dimensional move for Metropolis, a single-particle move for Gibbs) and `n_metro` only exists in `GibbsSampler`, which would raise `TypeError` in `MetroSampler`. Subsections let both settings live in one file and switching sampler is a one-line change.
 
 ## Final energy estimate
 
@@ -91,7 +119,9 @@ The Laplacian is computed as `trace(jax.hessian(...))` over the `N·dim` coordin
 
 TOML sections are passed as `**kwargs` straight into the dataclasses. This removes glue code, and adding a field to a class makes it configurable immediately. The cost is that keys must match field names exactly: a typo raises `TypeError: unexpected keyword argument`.
 
-The one exception is `dim`. It is a field of both `boson_trap` and `NQS`, but it is only read from `[system]` and injected into the model with `NQS(**cfg["network"], dim=system.dim)`. Keeping a single source means the sampler, the Hamiltonian and the encoder can never disagree on the particle dimension.
+The sampler is unpacked from a subsection selected by `[sampler] type` (see above).
+
+The other exception is `dim`. It is a field of both `boson_trap` and `NQS`, but it is only read from `[system]` and injected into the model with `NQS(**cfg["network"], dim=system.dim)`. Keeping a single source means the sampler, the Hamiltonian and the encoder can never disagree on the particle dimension.
 
 ## Not a package
 

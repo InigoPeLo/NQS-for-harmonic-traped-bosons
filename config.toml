@@ -1,31 +1,41 @@
 # Parameters for train.py. Run with: python train.py --config config.toml
 #
-# The keys of [system], [network], [sampler] and [sr] must match the field names of
-# boson_trap, NQS, MetroSampler and SR, because train.py passes each section directly to its class.
+# The keys of [system], [network], [sampler.metropolis], [sampler.gibbs] and [sr] must match the field
+# names of boson_trap, NQS, MetroSampler, GibbsSampler and SR, because train.py passes each section
+# directly to its class.
 # These defaults converge to the exact energy E = N for N = 4.
 
 [system]            # boson_trap
-n_particles = 40     # number of bosons N
+n_particles = 10    # number of bosons N
 
 [network]           # NQS
 n_visible = 32      # latent dimension F of the Deep Sets encoder
 n_hidden_rbm = 32   # hidden units M of the RBM (amplitude)
 n_hidden_ffnn = 32  # hidden units K of the FFNN (phase)
-alpha = 0.3         # initial value of the Gaussian envelope parameter (exact: 0.5)
+alpha = 0.7         # initial value of the Gaussian envelope parameter (exact: 0.5)
 init_scale = 0.01   # scale of the initial RBM weights W
 
-[sampler]           # MetroSampler
-n_chains = 256      # Markov chains run in parallel
-step_size = 0.125     # Metropolis step size delta (aim for ~50% acceptance)
-n_sweep = 10        # Metropolis steps between two recorded samples
+[sampler]
+type = "gibbs"     # "metropolis" or "gibbs": which of the two sections below is used
+
+[sampler.metropolis]    # MetroSampler: moves all the particles at once
+n_chains = 256          # Markov chains run in parallel
+step_size = 0.14        # step size delta (aim for ~50% acceptance), smaller for larger N (2N-dimensional move)
+n_sweep = 10            # Metropolis steps between two recorded samples
+
+[sampler.gibbs]         # GibbsSampler: hidden units h|x, then every particle x_i|h on its own
+n_chains = 256          # Markov chains run in parallel
+step_size = 1.32         # step size of each particle, does not need to shrink with N (acceptance is per particle)
+n_sweep = 10            # Gibbs steps between two recorded samples
+n_metro = 3             # Metropolis steps of p(x|h) inside each Gibbs step
 
 [sr]                # SR
 learning_rate = 0.02  # eta
-varepsilon = 1     # diagonal shift epsilon of S
+varepsilon = 0.1     # diagonal shift epsilon of S
 
 [training]
-n_samples = 10          # recorded samples per chain and iteration (Ns = n_chains * n_samples)
-n_thermalization = 500  # sweeps discarded before training
-n_iter = 500            # number of SR iterations
+n_samples = 13          # recorded samples per chain and iteration (Ns = n_chains * n_samples)
+n_thermalization = 100  # sweeps discarded before training
+n_iter = 600         # number of SR iterations
 seed = 0                # seed of the random number generator
 output_dir = "results"  # every run is saved in its own folder results/N{N}_{date-time}/

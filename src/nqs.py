@@ -1,5 +1,5 @@
 """Here we define all the three neural networks we need to use,
-RBM for the amplitud
+RBM for the probability density
 FFNN for the phase
 Deep Sets encoder"""
 
@@ -37,7 +37,7 @@ class DSE:
 
         return H_global
 
-#Definition of the RBM used for the amplitude
+#Definition of the RBM used for the probability density
 
 @dataclass(frozen=True)
 class RBM:
@@ -169,7 +169,7 @@ class NQS:
 
         #We also need to add the Gaussian envelope to log|psi|, which is -alpha*sum_i |x_i|^2
         alpha=jax.nn.softplus(params["alpha_tilde"])
-        log_psi=log_psi_rbm - alpha*jnp.sum(x**2)
+        log_psi=0.5*log_psi_rbm - alpha*jnp.sum(x**2)
 
         #We build the final log psi
 

@@ -26,7 +26,7 @@ cd NQS-for-harmonic-traped-bosons
 uv sync
 ```
 
-This creates `.venv/` with `jax[cuda12]`, its CUDA 12 wheels and NumPy. It also installs the `dev` dependency group (`matplotlib`, `ipykernel`), which only the analysis notebook needs. On a machine that only trains, use `uv sync --no-dev`. `pyproject.toml` sets `[tool.uv] package = false`, so the project itself is **not** installed. Modules are imported as `src.nqs`, `src.sampler`, … which only works when commands run from the project root.
+This creates `.venv/` with `jax[cuda12]`, its CUDA 12 wheels and NumPy. It also installs the `dev` dependency group (`matplotlib`, `ipykernel`), which only the analysis notebook needs. On a machine that only trains, use `uv sync --no-dev`. `pyproject.toml` sets `[tool.uv] package = false`, so the project itself is **not** installed. Modules are imported as `src.nqs`, `src.sampler_m`, … which only works when commands run from the project root.
 
 `uv.lock` and `.python-version` are committed. A fresh clone gets the same interpreter (3.14) and the exact package versions, including `jax`/`jaxlib` 0.11.2. To fail instead of silently re-resolving when the lockfile and `pyproject.toml` disagree:
 
@@ -36,14 +36,11 @@ uv sync --locked
 
 ### 3. Environment variables
 
-None are required. Two optional JAX variables:
+None are required. `train.py` and the analysis notebook both set `XLA_PYTHON_CLIENT_PREALLOCATE=false` before importing JAX, so JAX does not reserve 75% of the GPU memory and a training run and the notebook can share one GPU. The notebook uses `setdefault`, so a value exported in the shell takes precedence there. `train.py` always overrides it.
+
+To force the CPU (e.g. to compare against the GPU or on a machine without CUDA):
 
 ```bash
-# Stop JAX from preallocating 75% of GPU memory. Avoids the
-# "CUDA_ERROR_OUT_OF_MEMORY" log lines seen on small laptop GPUs / WSL2.
-export XLA_PYTHON_CLIENT_PREALLOCATE=false
-
-# Force CPU (e.g. to compare against GPU or on a machine without CUDA)
 export JAX_PLATFORMS=cpu
 ```
 
@@ -65,7 +62,7 @@ uv run python train.py --config config.toml
    # 0.11.2 [CpuDevice(id=0)]       ← CPU fallback
    ```
 
-2. Run training with the N = 4 config. A healthy run passes the thermalization check (`|z| < 3`), ends near the exact energy and prints no acceptance warning:
+2. Run training with the N = 4 reference settings ([usage.md](usage.md#parameters); the shipped `config.toml` is set to N = 20). A healthy run passes the thermalization check (`|z| < 3`), ends near the exact energy and prints no acceptance warning:
 
    ```
    Thermalization: z = 0.84
@@ -73,10 +70,10 @@ uv run python train.py --config config.toml
    Exact energy: E_0 = 4.000000, relative error = 2.38e-07
    Final Var(E_loc) = 3.14e-05, alpha = 0.4865
    Final acceptance (mean of the last 20 iterations) = 0.45
-   Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff
+   Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff_m
    ```
 
-On an RTX 5070 Laptop GPU, 21 iterations take about 16 s including JIT compilation. The full 150-iteration default run scales from that.
+On an RTX 5070 Laptop GPU, 21 iterations take about 16 s including JIT compilation. A full 150-iteration N = 4 run scales from that.
 
 ## Notebook kernel
 
@@ -86,7 +83,7 @@ On an RTX 5070 Laptop GPU, 21 iterations take about 16 s including JIT compilati
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `E... cuda_executor.cc ... CUDA_ERROR_OUT_OF_MEMORY` at startup, but training continues | JAX's default preallocation fails, then it retries with smaller blocks | Harmless. Silence it with `XLA_PYTHON_CLIENT_PREALLOCATE=false` |
+| `E... cuda_executor.cc ... CUDA_ERROR_OUT_OF_MEMORY` at startup, but training continues | JAX's default preallocation fails, then it retries with smaller blocks | Harmless. `train.py` and the notebook already disable preallocation; if it appears in your own scripts, set `XLA_PYTHON_CLIENT_PREALLOCATE=false` before importing JAX |
 | `ModuleNotFoundError: No module named 'src'` | Script run from outside the project root | `cd` to the root, then `uv run python train.py` |
 | `FileNotFoundError: config.toml` | Same: the default `--config` is relative to the current directory | Run from the root or pass an absolute `--config` path |
 | Notebook: `ModuleNotFoundError: No module named 'matplotlib'` (or `src`) | Wrong kernel selected, or `uv sync --no-dev` was used | Select the `.venv` kernel and run `uv sync` |

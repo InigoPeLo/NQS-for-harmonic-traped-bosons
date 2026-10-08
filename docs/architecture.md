@@ -6,7 +6,7 @@ The project is a single-script VMC pipeline. Four immutable components, each a `
 |---|---|---|
 | Physical system | `boson_trap` (`src/boson_trap.py`) | Potential, local kinetic and total energy, exact reference energy |
 | Wavefunction | `NQS` (`src/nqs.py`) | `log ψ_θ(X)` as a complex number, from a parameter pytree |
-| Sampler | `MetroSampler` (`src/sampler.py`) | Draws configurations from \|ψ\|², checks thermalization |
+| Sampler | `MetroSampler` (`src/sampler_m.py`) or `GibbsSampler` (`src/sampler_g.py`), chosen by `[sampler] type` | Draws configurations from \|ψ\|², checks thermalization |
 | Optimizer | `SR` (`src/sr_optimizer.py`) | Log-derivatives, S matrix and force F, parameter update |
 
 Components never hold parameters or state. Parameters live in a pytree (and later a flat vector `θ`), walkers in an array, and both are passed explicitly. This is what lets the whole iteration be one pure function under `jax.jit`.
@@ -20,17 +20,17 @@ x_i ──► Deep Sets encoder ──► H = Σ_i swish(W x_i + b)        (F-di
                                    │
                     ┌──────────────┴──────────────┐
                     ▼                             ▼
-          RBM (amplitude)                  FFNN (phase)
+          RBM (probability)                FFNN (phase)
   a·H + Σ_m log cosh(b_m + W_m·H)    Σ_k u_k log cosh(c_k + V_k·H)
                     │                             │
                     ▼                             ▼
-        log|ψ| = RBM − α Σ_i |x_i|²          φ (phase)
+      log|ψ| = ½·RBM − α Σ_i |x_i|²          φ (phase)
                     └──────────► f = log|ψ| + i φ
 ```
 
 - **Deep Sets encoder (`DSE`):** the same single-layer map is applied to every particle and the results are **summed**. Any permutation of particles gives the same `H`, so ψ is bosonic by construction and needs no explicit symmetrization.
-- **RBM:** the log of an RBM with its hidden units traced out, applied to the continuous latent vector `H`. `log cosh` is computed as `logaddexp(θ, −θ)`, dropping the constant `−log 2`, to avoid overflow.
-- **Gaussian envelope:** the RBM and swish grow at most linearly in |x|, so the factor `−α Σ|x_i|²` is what makes ψ decay. α is stored as `alpha_tilde` with `α = softplus(alpha_tilde)`, so SR can never make it negative.
+- **RBM:** the log of an RBM with its hidden units traced out, applied to the continuous latent vector `H`. Its output models the probability density, `log|ψ|² = RBM − 2α Σ|x_i|²`, so `NQS.apply` multiplies it by ½ to get `log|ψ|`. `log cosh` is computed as `logaddexp(θ, −θ)`, dropping the constant `−log 2`, to avoid overflow.
+- **Gaussian envelope:** the RBM and swish grow at most linearly in |x|, so the factor `−α Σ|x_i|²` is what makes ψ decay. It is applied to `log|ψ|`, so it is `−2α Σ|x_i|²` in `|ψ|²` and the exact value stays `α = ω/2`. α is stored as `alpha_tilde` with `α = softplus(alpha_tilde)`, so SR can never make it negative.
 - **FFNN phase:** one hidden layer with `log cosh` activation. The exact ground state is real and positive, so the phase should learn to be constant.
 
 Parameter count for `F` = `n_visible`, `M` = `n_hidden_rbm`, `K` = `n_hidden_ffnn`:
@@ -54,14 +54,34 @@ $$T_L = -\tfrac12\left[\nabla^2 f + (\nabla f)\cdot(\nabla f)\right],\qquad f = 
 
 ## Sampling
 
-`MetroSampler` runs `n_chains` independent random-walk Metropolis chains in parallel:
+Two samplers draw configurations from the same distribution, |ψ|². `[sampler] type` in the config selects one, and each reads its own subsection (`[sampler.metropolis]` or `[sampler.gibbs]`). Both run `n_chains` independent chains in parallel and have the same `init_walkers`, `sample` output and `check_therm`.
+
+### `MetroSampler`: random-walk Metropolis
 
 - proposal `X' = X + δ·ξ`, `ξ ~ N(0, I)`, moving **all** particles of a chain at once
 - accept if `log u < 2·(Re f(X') − Re f(X))`, i.e. with probability `min(1, |ψ'|²/|ψ|²)`
+- it only evaluates `log_psi(x)`, so it works with any ansatz
 - `n_sweep` steps form a sweep, and only the configuration at the end of each sweep is recorded. This thins the chain to reduce autocorrelation.
 - both loops (steps in a sweep, sweeps in a call) are `jax.lax.scan`, so they compile into one XLA loop
 
-`sample` returns `(n_samples·n_chains, N, dim)` samples, the final walkers, and the mean acceptance rate.
+### `GibbsSampler`: block Gibbs over the RBM hidden units
+
+Tracing out the hidden units of the RBM gives `log cosh`, so |ψ|² is exactly the marginal in `x` of the joint distribution
+
+$$p(x, h) \propto \exp\Big[a\cdot H(x) + \sum_j h_j\,\theta_j(x) - 2\alpha\sum_i |x_i|^2\Big],\qquad h_j = \pm1,\quad \theta = b + W H(x).$$
+
+Each Gibbs `step` alternates the two conditionals:
+
+1. **`hidden_sample`, h | x (exact):** the hidden units are independent given `x`, with `p(h_j = +1 | x) = sigmoid(2θ_j)`.
+2. **x | h (Metropolis inside Gibbs):** with `c = a + h·W` of shape `(n_chains, F)`, the exponent becomes `Σ_i [c·swish(W_d x_i + b_d) − 2α|x_i|²]`. Because `H` is a sum over particles, `p(x | h)` **factorizes over particles**, which all follow the same one-body density `p_1(y | c)` (`log_p1`). It has no closed-form sampler, so `metro_step` makes `n_metro` Gaussian random-walk moves of every particle, accepting or rejecting **each particle on its own**.
+
+All correlations between particles go through `h`. `log_p1` is recomputed at the start of every Gibbs step, because the previous value was computed with a different `c`. Sweeps and recording work as in `MetroSampler`: `n_sweep` Gibbs steps per recorded sample, nested `lax.scan` loops. The reported acceptance is per particle.
+
+`GibbsSampler` never calls `NQS.apply` and never evaluates the phase, which does not enter |ψ|². It takes the parameter dict (`unravel(θ)`) and rebuilds the encoder, the RBM terms and α itself.
+
+### Common output
+
+`sample` returns `(n_samples·n_chains, N, dim)` samples in sweep-major order, the final walkers, and the mean acceptance rate. `check_therm` relies on that order.
 
 ## Optimization: Stochastic Reconfiguration
 
@@ -78,29 +98,35 @@ solved with a dense `jnp.linalg.solve`. `SR.step` also returns `[mean(E_L), var(
 ## Data flow of a run
 
 ```
-config.toml ─► load_config ─► boson_trap / NQS / MetroSampler / SR
+config.toml ─► load_config ─► boson_trap / NQS / MetroSampler or GibbsSampler / SR
                                         │
 PRNGKey(seed) ─split─► key_params ─► NQS.init ─► params ─ravel_pytree─► θ, unravel
                     ├─► key_walkers ─► init_walkers ─► walkers (n_chains, N, 2) ~ N(0, I)
-                    ├─► key_therm ──► sample(n_thermalization sweeps) ─► check_therm (|z| < 3)
+                    ├─► key_therm ──► sample_fn(n_thermalization sweeps) ─► check_therm (|z| < 3)
                     └─► key_train ──► for n in n_iter:
                                          train_step(θ, walkers, key)   ← jax.jit
-                                           ├ sample(n_samples sweeps)   walkers carried over
+                                           ├ sample_fn(n_samples sweeps) walkers carried over
                                            ├ batch_local_energy         E_L (Ns,)
-                                           └ SR.step                    θ_new, [E, Var]
+                                           ├ SR.step                    θ_new, [E, Var]
+                                           └ std(Im log ψ) over samples phase_std
                                        ─► summary + final acceptance warning (last 20 iterations)
-                                       ─► save_results ─► results/N{N}_{YYYYmmdd-HHMMSS-ffffff}/
+                                       ─► save_results ─► results/N{N}_{YYYYmmdd-HHMMSS-ffffff}_{m|g}/
 ```
 
 - `log_psi(θ, x) = model.apply(unravel(θ), x)` is the single bridge between the pytree world (model) and the flat vector world (SR).
-- `make_train_step` closes over `log_psi`, `sampler`, `system`, `sr` and `n_samples`. `jit` treats them as compile-time constants, so `train_step` only takes the arrays that change: `θ`, `walkers` and `key`.
+- `sample_fn(θ, walkers, n, key)` hides which sampler is used. The two `sample` methods take different inputs: Metropolis needs `log_psi(x)`, Gibbs needs the parameter dict. `main()` builds `sample_fn` once, passing `lambda x: log_psi(θ, x)` or `unravel(θ)`, and thermalization and `train_step` only ever call `sample_fn`.
+- `make_train_step` closes over `log_psi`, `sample_fn`, `system`, `sr` and `n_samples`. `jit` treats them as compile-time constants, so `train_step` only takes the arrays that change: `θ`, `walkers` and `key`.
 - Walkers are carried across iterations. Each iteration starts from an almost-equilibrated state, so it only needs `n_samples` sweeps and no re-thermalization.
 
 ## Persistence
 
 There is no database. Each run writes:
 
-- `results.npz` with `theta` and the per-iteration arrays `energy`, `variance`, `acceptance`, `alpha`
+- `results.npz` with `theta` and the per-iteration arrays `energy`, `variance`, `acceptance`, `alpha`, `phase_std`. `phase_std` is the std of the phase `Im log ψ` over the samples of each iteration. The exact ground state has a constant phase, so it should go to 0.
 - `config.toml`, a verbatim copy of the input config
 
 The config copy is needed to rebuild the same `NQS` (and so the same `unravel`) when reading `theta` back. That includes `[system].dim`, which sets the shape of the encoder weights.
+
+Runs saved before the Gibbs sampler was added have a flat `[sampler]` section (`n_chains`, `step_size`, `n_sweep`) and always used Metropolis. Current configs have `[sampler] type` plus one subsection per sampler.
+
+The config does not record whether the RBM modelled |ψ| (older code) or |ψ|² (current code). A `theta` saved before that change has the same shape but gives a different ψ with the current `NQS`, so it must be read with the code that produced it.

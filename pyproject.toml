@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 # The code is run as scripts from the project root (python train.py), not installed as a package:
-# uv only manages the environment and the dependencies. Modules are imported as src.nqs, src.sampler...
+# uv only manages the environment and the dependencies. Modules are imported as src.nqs, src.sampler_m...
 [tool.uv]
 package = false
 

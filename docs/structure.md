@@ -11,13 +11,16 @@ boson-trap/
 │   ├── __init__.py       # empty; makes `src` importable as a package
 │   ├── boson_trap.py     # physical system
 │   ├── nqs.py            # neural wavefunction
-│   ├── sampler.py        # Metropolis sampler
+│   ├── sampler_m.py      # Metropolis sampler
+│   ├── sampler_g.py      # block Gibbs sampler
 │   └── sr_optimizer.py   # Stochastic Reconfiguration
 ├── notebooks/
 │   └── analysis.ipynb    # post-processing of results/ (stored without outputs)
 ├── notes/                # git-ignored; local theory notes, not in the repository
+│   ├── NQS_TrappedBosons.pdf   # method notes (equation numbers cited in the code)
+│   └── gibbs_sampler.tex/.pdf  # derivation of the Gibbs sampler
 └── results/              # git-ignored; one subfolder per run
-    └── N4_20261006-121907/      # current runs: N4_YYYYmmdd-HHMMSS-ffffff/
+    └── N4_20261008-133049-200873_g/  # N{N}_YYYYmmdd-HHMMSS-ffffff_{m|g}/
         ├── config.toml   # copy of the config used
         └── results.npz   # theta + training history
 ```
@@ -37,31 +40,35 @@ Orchestration only:
 It holds no physics or numerics beyond averaging the last 10% of iterations for the final estimate.
 
 ### `src/`
-One module per component, and each one doesn't know about the others:
+One module per component:
 
 | Module | Contains | Depends on |
 |---|---|---|
 | `boson_trap.py` | `boson_trap`: `exact_energy`, `trap_potential`, `kinetic_local`, `local_energy`, `batch_local_energy` | a `log_psi(x)` callable |
 | `nqs.py` | `DSE`, `RBM`, `FFNN` (building blocks), `NQS` (full model) | — |
-| `sampler.py` | `MetroSampler`: `init_walkers`, `step`, `sample`, `check_therm` | a `log_psi(x)` callable |
+| `sampler_m.py` | `MetroSampler`: `init_walkers`, `step`, `sample`, `check_therm` | a `log_psi(x)` callable |
+| `sampler_g.py` | `GibbsSampler`: `init_walkers`, `hidden_sample`, `log_p1`, `metro_step`, `step`, `sample`, `check_therm` | the `NQS` parameter dict, and `DSE` imported from `nqs.py` |
 | `sr_optimizer.py` | `flatten_params`, `log_derivatives`, `compute_S_F`, `SR.step` | a `log_psi(θ, x)` callable |
 
-The modules communicate only through callables and arrays, never by importing each other. The system and sampler take `log_psi(x)` with θ fixed, while SR takes `log_psi(θ, x)` because it differentiates with respect to θ. Because of this, any ansatz that returns a complex `log ψ` can replace `NQS` without changing the other three modules.
+`boson_trap`, `MetroSampler` and `SR` communicate only through callables and arrays. The system and Metropolis take `log_psi(x)` with θ fixed, while SR takes `log_psi(θ, x)` because it differentiates with respect to θ. Any ansatz that returns a complex `log ψ` can replace `NQS` without changing them.
+
+`sampler_g.py` is the exception: it is **tied to this `NQS`**. It imports `DSE`, reads the keys of the parameter dict (`params_dse`, `params_rbm`, `alpha_tilde`) and re-implements |ψ|² term by term in `hidden_sample` and `log_p1`. A change to the encoder, the RBM, the ½ factor or the envelope in `nqs.py` has to be mirrored there, or Gibbs silently samples a different distribution. `train.py` still only depends on the common `sample` output, through `sample_fn`.
 
 ### `config.toml`
-The sections `[system]`, `[network]`, `[sampler]` and `[sr]` are unpacked with `**` into `boson_trap`, `NQS`, `MetroSampler` and `SR`. Their keys **must match the dataclass field names**. `[training]` holds loop-level settings that belong to no class.
+The sections `[system]`, `[network]` and `[sr]` are unpacked with `**` into `boson_trap`, `NQS` and `SR`. `[sampler]` only holds `type` (`"metropolis"` or `"gibbs"`), and the matching subsection, `[sampler.metropolis]` or `[sampler.gibbs]`, is unpacked into `MetroSampler` or `GibbsSampler`. Keys **must match the dataclass field names**. `[training]` holds loop-level settings that belong to no class.
 
 ### `notebooks/`
 Post-processing only. `analysis.ipynb` reads every run in the folders of `RESULTS_DIRS` (default `results/`), lets you filter which ones to analyse, and never trains. It finds the project root by walking up to `pyproject.toml` and adds it to `sys.path`, so it imports `src.*` like `train.py` does. It can rebuild and sample a trained wavefunction because each run stores its own `config.toml`. It depends on the dev group (`matplotlib`, `ipykernel`), never on code in `train.py`.
 
 ### `notes/`
-Git-ignored: the author's theory notes are kept locally and are not distributed with the repository. Nothing in the code reads them. The equation numbers cited in comments in `src/nqs.py` (eq. 58, eq. 64, section 6.2.1) refer to these notes.
+Git-ignored: the author's theory notes are kept locally and are not distributed with the repository. Nothing in the code reads them. The equation numbers cited in comments in `src/nqs.py` (eq. 58, eq. 64, section 6.2.1) refer to `NQS_TrappedBosons.pdf`. `gibbs_sampler.tex` derives the joint distribution, the two conditionals and the Metropolis-within-Gibbs step implemented in `sampler_g.py`.
 
 ### `results/`
-Generated output, git-ignored. Folder names encode `N` and the timestamp at save time down to microseconds (`N{N}_{YYYYmmdd-HHMMSS-ffffff}`), so runs launched in parallel don't collide. The four existing runs predate the microsecond suffix and are named `N4_YYYYmmdd-HHMMSS`.
+Generated output, git-ignored. Folder names encode `N`, the timestamp at save time down to microseconds, and the sampler (`N{N}_{YYYYmmdd-HHMMSS-ffffff}_{m|g}`, `_m` for Metropolis and `_g` for Gibbs), so runs launched in parallel don't collide. The tag goes last so the names still sort by date. Older runs are named `N{N}_YYYYmmdd-HHMMSS-ffffff` (before the sampler tag, always Metropolis) or `N{N}_YYYYmmdd-HHMMSS` (before the microsecond suffix). The notebook accepts all three forms, and reads the sampler from the run's `config.toml`, not from the name.
 
 ## What should not go where
 
+- **Sampler-specific branches in `train_step`:** the difference between samplers is confined to `sample_fn` in `main()`. The rest of the loop must not depend on which sampler is used.
 - **Mutable state in the component classes:** they are frozen dataclasses on purpose. Parameters, walkers and keys are passed in and returned. Storing them on `self` would break `jit` purity and hashing.
 - **Hyperparameters hard-coded in `train.py`:** add them as a dataclass field and a matching key in the config section. The `**cfg[...]` unpacking picks them up automatically.
 - **Analysis code in `train.py`:** it saves everything needed (`theta`, history, config). Post-processing belongs in `notebooks/`.
