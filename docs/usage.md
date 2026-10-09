@@ -226,7 +226,6 @@ For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and eac
 | 4. Trained wavefunction | Cut of `log\|ψ\|` and phase with particle 0 on the x axis, vs exact `−ω x²/2` | Default run: max deviation `2.9e-04`, phase flat to `1.2e-03` for \|x\| < 2 |
 | 5. Final evaluation at fixed θ | Fresh sampling (`N_THERM = N_EVAL = 200` sweeps), `E ± err` from per-chain means, `Var` split into real and imaginary parts, one-body density | Default run: `E = 3.999992 ± 0.000008` (−1.0σ from `E_0`), `<\|x_i\|²> = 0.998` vs exact `1.000` |
 | 6. Is the phase constant? | For the run of section 5: histogram of `φ − <φ>`. For every selected run: `std(φ)`, its energy cost `½<\|∇φ\|²>` and its share of `E − E_0` (re-sampled with `N_THERM_PHASE = 200`, `N_PHASE = 20` sweeps). Then `phase_std` against SR iteration | A single spike at 0 and a cost well below `E − E_0`. Runs without `phase_std` are listed and skipped in the last plot |
-| 7. Sampler comparison | Reads a folder of `evaluate/output/` (not `results/`): tuned step sizes, summary per N and sampler, training curves against iteration and wall time, ESS/s, τ, time per step and agreement against N | See [section 6](#6-compare-the-samplers) |
 
 - **Selecting runs (section 1b):** filters left as `None` are ignored, and the ones that are set must all pass.
 
@@ -283,7 +282,7 @@ How to read it:
 - **In training, with `n_sweep = 10` for both, Metropolis reaches the tolerance faster in wall time** (3.6 s against 9.6 s at N = 20), with the same number of iterations. A Gibbs step is ~8× more expensive, and with τ ≈ 1.7 steps, 10 Gibbs steps per recorded sample are far more decorrelation than needed. Lowering `[sampler.gibbs] n_sweep` to 1–2 is the first thing to try before choosing Gibbs for training.
 - The step tuning reads `ACC_MIN`, `ACC_MAX` from `train.py`, so changing the band there also changes the comparison.
 
-Then open section 7 of the notebook. `COMPARE_DIR = None` loads the most recent comparison.
+Then open `notebooks/compare_samplers.ipynb` and run all its cells. `COMPARE_DIR = None` loads the most recent comparison (by the date-time in the folder name). It shows the tuned step sizes, a summary per N and sampler, the training curves against iteration and wall time, and ESS/s, τ, time per step and agreement against N.
 
 ## Edge cases and limits
 
@@ -306,7 +305,7 @@ Then open section 7 of the notebook. `COMPARE_DIR = None` loads the most recent 
 | `KeyError: 'training'` / `'n_iter'` | Missing section or key in a custom config | All `[training]` keys are required. Start from `config.toml` |
 | `ValueError: The config needs [sampler.metropolis] and [sampler.gibbs] subsections` | `compare_samplers.py` run with a flat `[sampler]` config | Use the current config format |
 | `Warning: … step_size not tuned in 12 trials` (compare_samplers) | The acceptance band could not be bracketed, e.g. the acceptance jumps across the whole band between two steps | Widen `[ACC_MIN, ACC_MAX]` in `train.py` or start from a closer `step_size` in the config |
-| Notebook section 7: `FileNotFoundError: No comparison found` | `evaluate/output/` has no comparison yet | Run `evaluate/compare_samplers.py` first |
+| `compare_samplers.ipynb`: `FileNotFoundError: No comparison found` | `evaluate/output/` has no comparison yet | Run `evaluate/compare_samplers.py` first |
 | `KeyError: 'type'` | Config with the old flat `[sampler]` section (e.g. the `config.toml` copied into a run saved before the Gibbs sampler) | Add `type = "metropolis"` to `[sampler]` and move its keys to `[sampler.metropolis]` |
 | `KeyError: 'gibbs'` / `'metropolis'` | `type` names a subsection that is missing | Add the `[sampler.<type>]` subsection |
 | `TypeError: … unexpected keyword argument 'n_metro'` | `n_metro` put in `[sampler.metropolis]` | It only exists in `[sampler.gibbs]` |

@@ -49,7 +49,7 @@ To compare the two samplers (step sizes tuned automatically for every N):
 uv run python evaluate/compare_samplers.py --N 4 20
 ```
 
-The results are read in section 7 of `notebooks/analysis.ipynb`. See [docs/usage.md](docs/usage.md#6-compare-the-samplers).
+The results are read in `notebooks/compare_samplers.ipynb`. See [docs/usage.md](docs/usage.md#6-compare-the-samplers).
 
 ## Technologies used
 
@@ -62,7 +62,7 @@ The results are read in section 7 of `notebooks/analysis.ipynb`. See [docs/usage
 | Environment | uv | Manages the environment and dependencies. The project is not installed as a package |
 | Config | TOML | One section per component, unpacked straight into its constructor |
 | Output | `.npz` via `jnp.savez` | Final parameters and per-iteration history |
-| Analysis (dev group) | matplotlib, ipykernel | `notebooks/analysis.ipynb`: training curves, wavefunction checks, fixed-θ evaluation |
+| Analysis (dev group) | matplotlib, ipykernel | `notebooks/analysis.ipynb`: training curves, wavefunction checks, fixed-θ evaluation; `notebooks/compare_samplers.ipynb`: sampler comparison |
 
 ## Quick installation
 
@@ -105,7 +105,8 @@ boson-trap/
 │   ├── compare_samplers.py # Metropolis vs Gibbs for several N: agreement, efficiency, training speed
 │   └── output/       # one folder per comparison (git-ignored)
 ├── notebooks/
-│   └── analysis.ipynb # compares runs, checks ψ against the exact state, fixed-θ energy, sampler comparison
+│   ├── analysis.ipynb # compares runs, checks ψ against the exact state, fixed-θ energy
+│   └── compare_samplers.ipynb # plots the output of evaluate/compare_samplers.py
 └── results/          # one folder per run (git-ignored)
 ```
 

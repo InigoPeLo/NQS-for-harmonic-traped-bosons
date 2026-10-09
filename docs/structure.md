@@ -22,7 +22,8 @@ boson-trap/
 │           ├── histories.npz   # training curves, keys N{N}_{sampler}_{field}
 │           └── config.toml     # copy of the config used (before tuning)
 ├── notebooks/
-│   └── analysis.ipynb    # post-processing of results/ and evaluate/output/ (stored without outputs)
+│   ├── analysis.ipynb    # post-processing of results/ (stored without outputs)
+│   └── compare_samplers.ipynb  # post-processing of evaluate/output/
 ├── notes/                # git-ignored; local theory notes, not in the repository
 │   ├── NQS_TrappedBosons.pdf   # method notes (equation numbers cited in the code)
 │   └── gibbs_sampler.tex/.pdf  # derivation of the Gibbs sampler
@@ -68,7 +69,7 @@ The sections `[system]`, `[network]` and `[sr]` are unpacked with `**` into `bos
 Scripts that measure the method rather than produce a ground state. `compare_samplers.py` compares the two samplers for a list of N: it tunes their step sizes, trains with each one and samples a fixed θ with both. Unlike the notebook, it **does** train, and it reuses `train.py` instead of duplicating it: it imports `make_train_step`, `SAMPLER_TAGS`, `ACC_MIN` and `ACC_MAX`, so a comparison always runs the same SR iteration and the same acceptance band as a real training. Like the notebook, it finds the project root by walking up to `pyproject.toml`, so it runs from any directory. Its output goes to `evaluate/output/`, separate from the runs of `results/`.
 
 ### `notebooks/`
-Post-processing only. `analysis.ipynb` reads every run in the folders of `RESULTS_DIRS` (default `results/`), lets you filter which ones to analyse, and never trains. Section 7 reads a comparison folder of `evaluate/output/` instead. It finds the project root by walking up to `pyproject.toml` and adds it to `sys.path`, so it imports `src.*` like `train.py` does. It can rebuild and sample a trained wavefunction because each run stores its own `config.toml`. It depends on the dev group (`matplotlib`, `ipykernel`), never on code in `train.py`.
+Post-processing only. `analysis.ipynb` reads every run in the folders of `RESULTS_DIRS` (default `results/`), lets you filter which ones to analyse, and never trains. `compare_samplers.ipynb` reads a comparison folder of `evaluate/output/` instead. They are separate notebooks so that each one runs with *Run All* on its own: `analysis.ipynb` stops with an error when `results/` is empty, which would otherwise block the comparison. `compare_samplers.ipynb` only reads `summary.json` and `histories.npz`, so it imports neither JAX nor `src`. It finds the project root by walking up to `pyproject.toml` and adds it to `sys.path`, so it imports `src.*` like `train.py` does. It can rebuild and sample a trained wavefunction because each run stores its own `config.toml`. It depends on the dev group (`matplotlib`, `ipykernel`), never on code in `train.py`.
 
 ### `notes/`
 Git-ignored: the author's theory notes are kept locally and are not distributed with the repository. Nothing in the code reads them. The equation numbers cited in comments in `src/nqs.py` (eq. 58, eq. 64, section 6.2.1) refer to `NQS_TrappedBosons.pdf`. `gibbs_sampler.tex` derives the joint distribution, the two conditionals and the Metropolis-within-Gibbs step implemented in `sampler_g.py`.

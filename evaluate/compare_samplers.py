@@ -7,8 +7,8 @@ For every N:
 3. Sample the reference theta with both samplers, recording every step, and measure whether they agree, the
    autocorrelation time per step and the effective samples per second.
 
-Results are saved in evaluate/output/compare_N{...}_{date-time}/ and analysed in section 7 of
-notebooks/analysis.ipynb. Run from the project root:
+Results are saved in evaluate/output/compare_N{...}_{date-time}/ and analysed in
+notebooks/compare_samplers.ipynb. Run from the project root:
     uv run python evaluate/compare_samplers.py --N 4 20
 """
 
@@ -406,6 +406,8 @@ def parse_args():
     parser.add_argument("--n_steps", type=int, default=1000, help="Steps recorded per chain at the reference theta")
     parser.add_argument("--e_stride", type=int, default=10, help="E_loc is measured every e_stride steps")
     parser.add_argument("--rel_tol", type=float, default=1e-3, help="Relative error used to measure convergence speed")
+    parser.add_argument("--varepsilon", type=float, nargs="+", default=None,
+                        help="SR diagonal shift, one value per N (default: [sr] varepsilon of the config for all N)")
     parser.add_argument("--seed", type=int, default=31, help="Seed of the comparison (the model init uses the config seed)")
     parser.add_argument("--output", default=str(ROOT / "evaluate" / "output"), help="Parent folder of the results")
     return parser.parse_args()
@@ -418,11 +420,20 @@ def main():
     if "type" not in cfg["sampler"]:
         raise ValueError("The config needs [sampler.metropolis] and [sampler.gibbs] subsections")
 
+    #The scale of S grows ~N^2, so a single diagonal shift cannot suit every N: --varepsilon gives one per N
+    if args.varepsilon is not None and len(args.varepsilon) != len(args.N):
+        raise ValueError(f"--varepsilon needs one value per N: {len(args.N)} values, got {len(args.varepsilon)}")
+
     print("JAX devices:", jax.devices())
     all_results = {}
     keys = jax.random.split(jax.random.PRNGKey(args.seed), len(args.N))
-    for N, key in zip(args.N, keys):
-        all_results[N] = run_N(cfg, N, args, key)
+    for i, (N, key) in enumerate(zip(args.N, keys)):
+        cfg_N = copy.deepcopy(cfg)
+        if args.varepsilon is not None:
+            cfg_N["sr"]["varepsilon"] = args.varepsilon[i]
+        print(f"\nN = {N}: SR learning_rate = {cfg_N['sr']['learning_rate']}, varepsilon = {cfg_N['sr']['varepsilon']}")
+        all_results[N] = run_N(cfg_N, N, args, key)
+        all_results[N]["sr"] = cfg_N["sr"]
 
     run_dir = save_results(args, all_results)
     print(f"\nResults saved in {run_dir}")
@@ -430,3 +441,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
