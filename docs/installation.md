@@ -62,7 +62,7 @@ uv run python train.py --config config.toml
    # 0.11.2 [CpuDevice(id=0)]       ← CPU fallback
    ```
 
-2. Run training with the N = 4 reference settings ([usage.md](usage.md#parameters); the shipped `config.toml` is set to N = 20). A healthy run passes the thermalization check (`|z| < 3`), ends near the exact energy and prints no acceptance warning:
+2. Run training with the N = 4 reference settings ([usage.md](usage.md#parameters); the shipped `config.toml` is set to N = 50 with Gibbs). A healthy run passes the thermalization check (`|z| < 3`), ends near the exact energy and prints no acceptance warning:
 
    ```
    Thermalization: z = 0.84

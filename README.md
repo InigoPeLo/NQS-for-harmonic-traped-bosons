@@ -9,8 +9,8 @@ Neural quantum state (Deep Sets + RBM + FFNN) for N bosons in a 2D harmonic trap
 | [📁 Structure](docs/structure.md) | Project organization and responsibilities |
 | [🚀 Installation](docs/installation.md) | Requirements and steps to run the project |
 | [🧠 Technical decisions](docs/decisions.md) | Trade-offs and design justifications |
-| [📖 Usage guide](docs/usage.md) | Running training, choosing the sampler, reading results, analysis notebook, tuning, common errors |
-| [🔌 API](docs/api.md) | CLI and Python interface of the `src` modules |
+| [📖 Usage guide](docs/usage.md) | Running training, choosing the sampler, comparing the samplers, reading results, analysis notebook, tuning, common errors |
+| [🔌 API](docs/api.md) | CLIs (`train.py`, `evaluate/compare_samplers.py`) and Python interface of the `src` modules |
 
 ---
 
@@ -28,7 +28,7 @@ uv sync
 uv run python train.py --config config.toml
 ```
 
-The shipped `config.toml` is set to N = 20 (400 SR iterations). With the N = 4 reference settings listed in [docs/usage.md](docs/usage.md#parameters) (150 SR iterations), the energy converges to the exact value `E_0 = 4`:
+The shipped `config.toml` is set to N = 50 with the Gibbs sampler (400 SR iterations). With the N = 4 reference settings listed in [docs/usage.md](docs/usage.md#parameters) (150 SR iterations), the energy converges to the exact value `E_0 = 4`:
 
 ```
 Thermalization: z = 0.84
@@ -42,6 +42,14 @@ Results saved in results/N4_YYYYmmdd-HHMMSS-ffffff_m
 ```
 
 Larger systems need a different SR shift and learning rate. For N = 40, see [docs/usage.md](docs/usage.md#example-n--40).
+
+To compare the two samplers (step sizes tuned automatically for every N):
+
+```bash
+uv run python evaluate/compare_samplers.py --N 4 20
+```
+
+The results are read in section 7 of `notebooks/analysis.ipynb`. See [docs/usage.md](docs/usage.md#6-compare-the-samplers).
 
 ## Technologies used
 
@@ -93,8 +101,11 @@ boson-trap/
 │   ├── sampler_m.py  # Metropolis sampler and thermalization check
 │   ├── sampler_g.py  # block Gibbs sampler (hidden units, then one particle at a time)
 │   └── sr_optimizer.py # log-derivatives, S and F, SR update
+├── evaluate/
+│   ├── compare_samplers.py # Metropolis vs Gibbs for several N: agreement, efficiency, training speed
+│   └── output/       # one folder per comparison (git-ignored)
 ├── notebooks/
-│   └── analysis.ipynb # compares runs, checks ψ against the exact state, fixed-θ energy
+│   └── analysis.ipynb # compares runs, checks ψ against the exact state, fixed-θ energy, sampler comparison
 └── results/          # one folder per run (git-ignored)
 ```
 

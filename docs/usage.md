@@ -8,7 +8,7 @@ All commands run from the project root.
 uv run python train.py
 ```
 
-The shipped `config.toml` is set to N = 20 (see [Parameters](#parameters)). The output below comes from the N = 4 reference settings, where the exact energy is `E_0 = 4`.
+The shipped `config.toml` is set to N = 50 with the Gibbs sampler (see [Parameters](#parameters)). The output below comes from the N = 4 reference settings, where the exact energy is `E_0 = 4`.
 
 A run goes through three phases:
 
@@ -72,7 +72,7 @@ n_metro = 3
 - **`metropolis`** moves all particles at once. Lower `step_size` as `N·dim` grows.
 - **`gibbs`** samples the RBM hidden units, then moves every particle on its own (`n_metro` moves per Gibbs step). `step_size` is a single-particle step and does not need to shrink with N. Its acceptance is per particle and runs higher than the Metropolis one at the same settings.
 
-Both converge to the same energy. At N = 20, 100 iterations, with the shipped settings:
+Both converge to the same energy. At N = 20, 100 iterations, with Metropolis `step_size = 0.14` and Gibbs `step_size = 0.5`, `n_metro = 3`:
 
 ```
 metropolis: Final energy (mean of the last 10 iterations): E = 20.096210 +- 0.003635   acceptance 0.54
@@ -133,32 +133,32 @@ With `step_size = 0.15`, the acceptance ends at ~0.34 and the final warning fire
 
 ### Parameters
 
-The first column holds the N = 4 reference settings used in the examples of this guide. The second holds the values in the shipped `config.toml`. For N = 40, see the example above.
+The first column holds the N = 4 reference settings used in the examples of this guide. The second holds the values in the shipped `config.toml` (N = 50, Gibbs). For N = 40, see the example above.
 
 | Section.key | N = 4 value | `config.toml` | Effect |
 |---|---|---|---|
-| `system.n_particles` | 4 | 20 | Number of bosons N. Exact energy `E_0 = N·dim·ω/2` (= N with the defaults) |
+| `system.n_particles` | 4 | 50 | Number of bosons N. Exact energy `E_0 = N·dim·ω/2` (= N with the defaults) |
 | `system.dim` | 2 *(not in file)* | 2 *(not in file)* | Spatial dimension of each particle. Also sets the encoder input size. Put it **only** in `[system]` |
 | `system.omega` | 1.0 *(not in file)* | 1.0 *(not in file)* | Trap frequency. Can be added to `[system]` |
 | `network.n_visible` | 32 | 32 | Latent size F of the Deep Sets encoder |
 | `network.n_hidden_rbm` | 32 | 32 | Hidden units M of the RBM that models \|ψ\|² |
 | `network.n_hidden_ffnn` | 32 | 32 | Hidden units K of the phase FFNN |
-| `network.alpha` | 0.3 | 0.3 | Initial Gaussian width parameter (exact `ω/2`) |
+| `network.alpha` | 0.3 | 0.7 | Initial Gaussian width parameter (exact `ω/2`) |
 | `network.init_scale` | 0.01 | 0.01 | Std of the initial RBM weights |
-| `sampler.type` | `"metropolis"` | `"metropolis"` | Which sampler to use: `"metropolis"` or `"gibbs"` |
+| `sampler.type` | `"metropolis"` | `"gibbs"` | Which sampler to use: `"metropolis"` or `"gibbs"` |
 | `sampler.metropolis.n_chains` | 256 | 256 | Parallel Markov chains |
 | `sampler.metropolis.step_size` | 0.4 | 0.14 | Metropolis step δ (all particles at once). Choose it so the *final* acceptance is in `[0.25, 0.4]` |
 | `sampler.metropolis.n_sweep` | 10 | 10 | Metropolis steps between recorded samples |
 | `sampler.gibbs.n_chains` | — | 256 | Parallel Markov chains |
-| `sampler.gibbs.step_size` | — | 0.5 | Single-particle step of the Metropolis moves inside Gibbs |
+| `sampler.gibbs.step_size` | — | 1.32 | Single-particle step of the Metropolis moves inside Gibbs |
 | `sampler.gibbs.n_sweep` | — | 10 | Gibbs steps between recorded samples |
-| `sampler.gibbs.n_metro` | — | 3 | Metropolis moves of every particle per Gibbs step (class default 1) |
+| `sampler.gibbs.n_metro` | — | 6 | Metropolis moves of every particle per Gibbs step (class default 1) |
 | `sr.learning_rate` | 0.05 | 0.02 | η |
 | `sr.varepsilon` | 1e-3 | 0.1 | Diagonal shift ε on S. Absolute, so it must grow with N (1.0 at N = 40). Write it as a float (`1.0`) |
-| `training.n_samples` | 8 | 10 | Recorded samples per chain per iteration (`Ns = n_chains · n_samples`) |
-| `training.n_thermalization` | 100 | 200 | Sweeps discarded before training |
+| `training.n_samples` | 8 | 13 | Recorded samples per chain per iteration (`Ns = n_chains · n_samples`) |
+| `training.n_thermalization` | 100 | 100 | Sweeps discarded before training |
 | `training.n_iter` | 150 | 400 | SR iterations |
-| `training.seed` | 0 | 1 | PRNG seed. Same seed and config give the same run on the same device |
+| `training.seed` | 0 | 0 | PRNG seed. Same seed and config give the same run on the same device |
 | `training.output_dir` | `"results"` | `"results"` | Parent folder for run outputs |
 
 Network size controls the cost: `p = (dim+1)F + M(F+1) + F + K(F+2) + 1` parameters, and SR scales as `O(p³)` per iteration. If you enlarge the network, also raise `n_chains · n_samples` towards `p`, or raise `varepsilon`.
@@ -226,6 +226,7 @@ For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and eac
 | 4. Trained wavefunction | Cut of `log\|ψ\|` and phase with particle 0 on the x axis, vs exact `−ω x²/2` | Default run: max deviation `2.9e-04`, phase flat to `1.2e-03` for \|x\| < 2 |
 | 5. Final evaluation at fixed θ | Fresh sampling (`N_THERM = N_EVAL = 200` sweeps), `E ± err` from per-chain means, `Var` split into real and imaginary parts, one-body density | Default run: `E = 3.999992 ± 0.000008` (−1.0σ from `E_0`), `<\|x_i\|²> = 0.998` vs exact `1.000` |
 | 6. Is the phase constant? | For the run of section 5: histogram of `φ − <φ>`. For every selected run: `std(φ)`, its energy cost `½<\|∇φ\|²>` and its share of `E − E_0` (re-sampled with `N_THERM_PHASE = 200`, `N_PHASE = 20` sweeps). Then `phase_std` against SR iteration | A single spike at 0 and a cost well below `E − E_0`. Runs without `phase_std` are listed and skipped in the last plot |
+| 7. Sampler comparison | Reads a folder of `evaluate/output/` (not `results/`): tuned step sizes, summary per N and sampler, training curves against iteration and wall time, ESS/s, τ, time per step and agreement against N | See [section 6](#6-compare-the-samplers) |
 
 - **Selecting runs (section 1b):** filters left as `None` are ignored, and the ones that are set must all pass.
 
@@ -248,6 +249,42 @@ For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and eac
 - **Both samplers:** `sampler_config` reads the run's sampler from its `config.toml`. A flat `[sampler]` section (runs saved before the Gibbs sampler) means Metropolis. The run list, summary table and plot labels show it as `m` or `g`, and sections 5–6 re-sample with the same sampler and settings the run was trained with (`build_sampler`). The acceptance panel is per particle for Gibbs runs, so compare it only between runs of the same sampler.
 - **Runs from before the |ψ|² RBM:** sections 1–3 only read the saved history, so they work for any run. Sections 4–6 rebuild ψ with the current `NQS`, which halves the RBM output. A run trained when the RBM modelled |ψ| would therefore be analysed with the wrong wavefunction. Analyse those runs with the code version that produced them.
 
+## 6. Compare the samplers
+
+`evaluate/compare_samplers.py` compares Metropolis and Gibbs for several N, with the step size of each one tuned automatically:
+
+```bash
+uv run python evaluate/compare_samplers.py --N 4 20
+```
+
+It needs a config with both `[sampler.metropolis]` and `[sampler.gibbs]`; `type` is ignored, and `n_particles` is replaced by each N. All options are in [api.md](api.md#evaluatecompare_samplerspy). For every N it prints the tuned steps and a summary, then saves everything in `evaluate/output/compare_N4-20_{date-time}/`.
+
+Output of a run with N = 4 and 20 (150 iterations, 2000 steps at fixed θ, shipped network and SR settings, ~4 min on an RTX 5070 Laptop GPU):
+
+```
+N = 20, E_0 = 20
+sampler        step   acc             E_final  ms/iter  it<tol   s<tol   μs/step   τ r2   ESS/s r2    τ E
+metropolis   0.1980  0.38    20.00123±0.00019     47.3      76     3.6     130.8 108.90    1.8e+04   4.30
+gibbs        1.3200  0.32    20.00201±0.00014    132.8      74     9.6    1004.6   1.66   1.54e+05   1.00
+Agreement Metropolis - Gibbs: sum|x|^2 -0.65 σ, E -0.53 σ
+```
+
+| Column | Meaning |
+|---|---|
+| `step`, `acc` | Tuned `step_size` and acceptance at the reference θ |
+| `E_final`, `ms/iter`, `it<tol`, `s<tol` | Training from scratch with that sampler: final energy, time per SR iteration, and iterations / seconds (without compilation) to a relative error below `--rel_tol` |
+| `μs/step`, `τ r2`, `ESS/s r2` | At the reference θ, recording every step: cost of one step, autocorrelation time of `Σ\|x_i\|²` in steps, and independent samples per second |
+| `τ E` | Autocorrelation time of `E_loc`, in units of `--e_stride` steps |
+| Agreement | Difference between the samplers in σ. Within ±2σ both sample the same \|ψ\|² |
+
+How to read it:
+
+- **Per step, Gibbs is the efficient sampler, and its advantage grows with N:** 2.4× more effective samples per second at N = 4 and 8.6× at N = 20. Its τ stays at ~1.7 steps, while the Metropolis τ grows from 26 to 109 because its tuned step shrinks from 0.56 to 0.20.
+- **In training, with `n_sweep = 10` for both, Metropolis reaches the tolerance faster in wall time** (3.6 s against 9.6 s at N = 20), with the same number of iterations. A Gibbs step is ~8× more expensive, and with τ ≈ 1.7 steps, 10 Gibbs steps per recorded sample are far more decorrelation than needed. Lowering `[sampler.gibbs] n_sweep` to 1–2 is the first thing to try before choosing Gibbs for training.
+- The step tuning reads `ACC_MIN`, `ACC_MAX` from `train.py`, so changing the band there also changes the comparison.
+
+Then open section 7 of the notebook. `COMPARE_DIR = None` loads the most recent comparison.
+
 ## Edge cases and limits
 
 - **`omega ≠ 1`.** The Hamiltonian and `exact_energy` handle it. The pure-Gaussian value of α becomes `ω/2`, so consider setting `network.alpha` near it.
@@ -267,6 +304,9 @@ For `.npz` files `jnp.load` defers to NumPy, so `d` is a NumPy `NpzFile` and eac
 | `TypeError: … got multiple values for keyword argument 'dim'` | `dim` was put in `[network]` | Move it to `[system]`. `train.py` passes it to `NQS` itself |
 | `ValueError: Sum of sizes … must be equal to dimension 0 of the operand shape …` when loading a run | `NQS` rebuilt with a different `dim` (or network sizes) than the run | Pass `dim=cfg["system"].get("dim", 2)` and use the run's own `config.toml` |
 | `KeyError: 'training'` / `'n_iter'` | Missing section or key in a custom config | All `[training]` keys are required. Start from `config.toml` |
+| `ValueError: The config needs [sampler.metropolis] and [sampler.gibbs] subsections` | `compare_samplers.py` run with a flat `[sampler]` config | Use the current config format |
+| `Warning: … step_size not tuned in 12 trials` (compare_samplers) | The acceptance band could not be bracketed, e.g. the acceptance jumps across the whole band between two steps | Widen `[ACC_MIN, ACC_MAX]` in `train.py` or start from a closer `step_size` in the config |
+| Notebook section 7: `FileNotFoundError: No comparison found` | `evaluate/output/` has no comparison yet | Run `evaluate/compare_samplers.py` first |
 | `KeyError: 'type'` | Config with the old flat `[sampler]` section (e.g. the `config.toml` copied into a run saved before the Gibbs sampler) | Add `type = "metropolis"` to `[sampler]` and move its keys to `[sampler.metropolis]` |
 | `KeyError: 'gibbs'` / `'metropolis'` | `type` names a subsection that is missing | Add the `[sampler.<type>]` subsection |
 | `TypeError: … unexpected keyword argument 'n_metro'` | `n_metro` put in `[sampler.metropolis]` | It only exists in `[sampler.gibbs]` |

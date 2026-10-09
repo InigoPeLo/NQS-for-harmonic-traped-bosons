@@ -108,6 +108,21 @@ The Laplacian is computed as `trace(jax.hessian(...))` over the `N·dim` coordin
 
 `[sampler]` only holds `type`, and each sampler reads its own subsection. `step_size` means different things in each (an `N·dim`-dimensional move for Metropolis, a single-particle move for Gibbs) and `n_metro` only exists in `GibbsSampler`, which would raise `TypeError` in `MetroSampler`. Subsections let both settings live in one file and switching sampler is a one-line change.
 
+## Sampler comparison methodology (`evaluate/compare_samplers.py`)
+
+Comparing two samplers is only meaningful if neither is handicapped by its settings. The script makes four choices for that:
+
+- **Step sizes are tuned automatically, per N and per sampler,** by bisection in log scale until the acceptance is in `[ACC_MIN, ACC_MAX]`. A hand-tuned Metropolis against a mistuned Gibbs (or the reverse) would measure the settings, not the samplers. It tunes twice: at the initial θ, so that the reference training works, and at the trained θ, because that is the ψ whose acceptance matters (the same advice given for `train.py`).
+- **The fixed-θ test records every step** (`n_sweep = 1`). Measured per recorded sweep, a sampler that thins a lot reaches τ = 1 and cannot show it is wasting work: an early version measured per sweep gave Gibbs τ = 1.00 and made it look 2× *less* efficient than Metropolis at N = 4. Per step, the same Gibbs is 2.4× *more* efficient.
+- **The figure of merit is effective samples per second,** `n / (τ · t)`. τ alone ignores that a Gibbs step costs more; time per step alone ignores correlation. Their product is what decides how long a given error bar takes. Errors come from the spread of independent chain means, so they need no τ estimate; τ is only used for the efficiency.
+- **The training comparison uses the config's `n_sweep`,** because that is how `train.py` would run. It reports convergence against iterations (sample quality as seen by SR) and against wall time (what it costs), separately.
+
+**Reuse over copies:** the script imports `make_train_step` and the acceptance band from `train.py`, and `make_samplers` mirrors `sample_fn`. A comparison therefore runs exactly the training loop of a real run. The cost is that `train.py` must stay importable without side effects, which `if __name__ == "__main__"` guarantees.
+
+**Estimator limits:** `autocorr_time` cuts the sum at the first non-positive ρ(k), which slightly underestimates τ (19 → 18.75 on an AR(1) test with φ = 0.9) equally for both samplers. Wall times depend on the GPU and include the per-step overhead of `lax.scan`, so they compare the samplers on one machine rather than in absolute terms.
+
+**Outcome so far (N = 4, 20):** both samplers agree within 2σ; per step, Gibbs gives 2.4× and 8.6× more effective samples per second, since its τ does not grow with N; in training with `n_sweep = 10`, Metropolis still converges faster in wall time because Gibbs over-thins. The comparison therefore points to lowering `[sampler.gibbs] n_sweep` rather than to either sampler being better in general.
+
 ## Final energy estimate
 
 `train.py` reports the mean of the last 10% of iterations, with an error bar `std/√n_last`. As the code comment says, this ignores correlation between iterations and is only indicative. The rigorous estimate, a long sampling run at fixed θ, lives in `notebooks/analysis.ipynb` (section 5), not in `train.py`:

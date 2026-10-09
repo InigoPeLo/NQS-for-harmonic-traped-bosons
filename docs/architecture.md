@@ -130,3 +130,26 @@ The config copy is needed to rebuild the same `NQS` (and so the same `unravel`) 
 Runs saved before the Gibbs sampler was added have a flat `[sampler]` section (`n_chains`, `step_size`, `n_sweep`) and always used Metropolis. Current configs have `[sampler] type` plus one subsection per sampler.
 
 The config does not record whether the RBM modelled |ψ| (older code) or |ψ|² (current code). A `theta` saved before that change has the same shape but gives a different ψ with the current `NQS`, so it must be read with the code that produced it.
+
+## Sampler comparison (`evaluate/compare_samplers.py`)
+
+A separate pipeline that measures the samplers instead of training a final state. For every N in `--N`:
+
+```
+config.toml (n_particles replaced by N)
+   │
+   ├─ setup ─────────────► system, NQS, initial θ, log_psi(θ, x), unravel, both samplers
+   ├─ tune_samplers(θ_init) ─► step_size of each sampler with acceptance in [ACC_MIN, ACC_MAX]
+   ├─ train_theta(metropolis) ─► reference θ_ref (n_iter SR iterations)
+   ├─ tune_samplers(θ_ref) ──► step sizes for the trained ψ (the acceptance changes while ψ narrows or widens)
+   ├─ compare_training ─────► both samplers train from the same initial θ with the same key:
+   │                           E, Var, acceptance and wall time per iteration
+   └─ compare_fixed_theta(θ_ref) ─► both samplers sample θ_ref recording every step (n_sweep = 1):
+                               <Σ|x_i|²>, <E_loc> ± error, τ per step, effective samples per second
+─► save_results ─► evaluate/output/compare_N{…}_{YYYYmmdd-HHMMSS}/
+```
+
+- **Same code as training:** `train_theta` thermalizes with `check_therm` and runs `make_train_step` from `train.py`, with the `sample_fn` of the chosen sampler. `make_samplers` builds the same `sample_fn` as `train.py` for both samplers at once.
+- **Step tuning:** `tune_step_size` bisects `step_size` in log scale (double or halve until the band is bracketed, then the geometric mean), measuring the acceptance on 20 sweeps per trial. The walkers are thermalized once and carried between trials, because |ψ|² does not depend on the step.
+- **Statistics:** `autocorr_time` computes the integrated autocorrelation time `τ = 1 + 2 Σ_k ρ(k)` of an `(n_times, n_chains)` series, averaging ρ over the chains and cutting the sum at the first non-positive ρ. `mean_and_error` takes the error bar from the spread of the chain means. `Σ|x_i|²` is measured on every step; `E_loc`, which needs a Hessian per sample, every `e_stride` steps and in batches.
+- **Figure of merit:** `ESS/s = n_samples / (τ · wall time)`, the number of independent samples per second. Sampling is compiled ahead of time (`jit(...).lower(...).compile()`) and timed with `block_until_ready`, so compilation is not counted.

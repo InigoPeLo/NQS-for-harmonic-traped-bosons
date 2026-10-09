@@ -6,7 +6,7 @@
 # These defaults converge to the exact energy E = N for N = 4.
 
 [system]            # boson_trap
-n_particles = 10    # number of bosons N
+n_particles = 50    # number of bosons N
 
 [network]           # NQS
 n_visible = 32      # latent dimension F of the Deep Sets encoder
@@ -27,7 +27,7 @@ n_sweep = 10            # Metropolis steps between two recorded samples
 n_chains = 256          # Markov chains run in parallel
 step_size = 1.32         # step size of each particle, does not need to shrink with N (acceptance is per particle)
 n_sweep = 10            # Gibbs steps between two recorded samples
-n_metro = 3             # Metropolis steps of p(x|h) inside each Gibbs step
+n_metro = 6             # Metropolis steps of p(x|h) inside each Gibbs step
 
 [sr]                # SR
 learning_rate = 0.02  # eta
@@ -36,6 +36,6 @@ varepsilon = 0.1     # diagonal shift epsilon of S
 [training]
 n_samples = 13          # recorded samples per chain and iteration (Ns = n_chains * n_samples)
 n_thermalization = 100  # sweeps discarded before training
-n_iter = 600         # number of SR iterations
+n_iter = 400         # number of SR iterations
 seed = 0                # seed of the random number generator
 output_dir = "results"  # every run is saved in its own folder results/N{N}_{date-time}/

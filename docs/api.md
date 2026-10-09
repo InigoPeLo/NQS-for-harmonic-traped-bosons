@@ -1,6 +1,6 @@
 # API
 
-The project has no HTTP interface. Its public surface is the `train.py` CLI and the five `src` modules.
+The project has no HTTP interface. Its public surface is the `train.py` and `evaluate/compare_samplers.py` CLIs and the five `src` modules.
 
 ## CLI
 
@@ -15,6 +15,35 @@ uv run python train.py [--config PATH]
 **Output:** creates `{training.output_dir}/N{n_particles}_{YYYYmmdd-HHMMSS-ffffff}_{m|g}/` (`_m` Metropolis, `_g` Gibbs) containing `results.npz` and `config.toml`. `main()` also returns `(model, params)` when imported.
 
 **Exit with error (`RuntimeError`)** if the thermalization drift is `|z| ≥ 3`. If the mean acceptance of the last 20 iterations is outside `[0.25, 0.4]` (`ACC_MIN`, `ACC_MAX` in `train.py`), it prints a `Warning:` line but still saves the run. See [usage.md](usage.md#common-errors).
+
+### `train.py` names used by other scripts
+
+| Name | Value / signature | Used by |
+|---|---|---|
+| `SAMPLER_TAGS` | `{"metropolis": "m", "gibbs": "g"}` | Run folder suffix, `compare_samplers.py` |
+| `ACC_MIN`, `ACC_MAX` | `0.25`, `0.4` | Final acceptance warning, step tuning in `compare_samplers.py` |
+| `make_train_step` | `(log_psi, sample_fn, system, sr, n_samples) -> train_step(theta, walkers, key)` | `main()`, `compare_samplers.py` |
+
+### `evaluate/compare_samplers.py`
+
+```
+uv run python evaluate/compare_samplers.py [--config PATH] [--N N ...] [--n_iter I] [--n_steps S] [--e_stride K] [--rel_tol R] [--seed SEED] [--output DIR]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--config` | `<root>/config.toml` | Config with `[sampler.metropolis]` and `[sampler.gibbs]`. `n_particles` is replaced by each N. The flat `[sampler]` format raises `ValueError` |
+| `--N` | `4 20` | Numbers of particles to compare |
+| `--n_iter` | `150` | SR iterations of every training (reference θ and both compared trainings) |
+| `--n_steps` | `1000` | Steps recorded per chain at the reference θ |
+| `--e_stride` | `10` | `E_loc` is measured every `e_stride` steps |
+| `--rel_tol` | `1e-3` | Relative error used for iterations / seconds to converge |
+| `--seed` | `31` | Seed of the comparison. The model initialization uses `[training] seed` |
+| `--output` | `<root>/evaluate/output` | Parent folder of the results |
+
+**Output:** `{output}/compare_N{N1-N2-…}_{YYYYmmdd-HHMMSS}/` with `summary.json`, `histories.npz` and `config.toml`. `summary.json` has, per N, `tuning_init` and `tuning_ref` (step size, acceptance, every `(step, acceptance)` tried), `training` per sampler (`E_final`, `E_err`, `acc_final`, `time_per_iter`, `iter_tol`, `time_tol`) and `fixed` per sampler (`step_size`, `acceptance`, `time_per_step`, and for `r2` and `E`: `mean`, `err`, `tau`, `stride`, `ess_per_s`), plus `agreement` in σ.
+
+Its functions (`autocorr_time`, `make_samplers`, `setup`, `tune_samplers`, `train_theta`, `compare_training`, `compare_fixed_theta`) can be imported from a script that puts `evaluate/` on `sys.path`.
 
 ## Conventions
 
